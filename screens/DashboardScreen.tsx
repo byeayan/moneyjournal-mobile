@@ -1,6 +1,5 @@
 import CalendarView from "@/components/common/CalendarView";
 import DailyTransactions from "@/components/common/DailyTransaction";
-import { Transaction } from "@/screens/DashboardScreen";
 import { useTransactionStore } from "@/store/transactionStore";
 import colors from "@/utils/colors";
 import { Ionicons } from "@expo/vector-icons";
@@ -18,13 +17,13 @@ export default function DashboardScreen() {
     const navigation = useNavigation<any>();
     const { fetchTransactions, transactions } = useTransactionStore();
     const [selectedDate, setSelectedDate] = useState(new Date());
-    const [transactions, setTransactions] = useState<Transaction[]>([]);
+    // const [transactions, setTransactions] = useState<Transaction[]>([]);
 
     useEffect(() => {
         const loadTransactions = async () => {
             await fetchTransactions(selectedDate);
-            const filtered = transactions;
-            setTransactions(filtered);
+            // const filtered = transactions;
+            // setTransactions(filtered);
         };
 
         loadTransactions();
@@ -38,7 +37,7 @@ export default function DashboardScreen() {
         .reduce((sum, t) => sum + t.amount, 0);
 
     const handleMaximizeCalendar = () => {
-        navigation.navigate("FullCalendar", { transactions: allTransactions });
+        navigation.navigate("FullCalendar", { transactions: transactions });
     };
 
     return (
@@ -90,7 +89,7 @@ export default function DashboardScreen() {
                 <CalendarView
                     selectedDate={selectedDate}
                     onDateSelect={setSelectedDate}
-                    transactions={allTransactions}
+                    transactions={transactions}
                     cellHeight={32}
                     theme={{
                         monthTextColor: colors.highlight,
