@@ -1,30 +1,34 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useAuthStore } from '@/store/authStore';
 import colors from '@/utils/colors';
+import { useNavigation } from '@react-navigation/native';
+import React, { useState } from 'react';
+import { Alert, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const navigation = useNavigation<any>(); // navigation hook
+  const { login } = useAuthStore();
 
-  const handleLogin = () => {
-    if (email === 'ayan@example.com' && password === '1234') {
-      Alert.alert('Success', 'Logged in successfully! 🎉', [
-        {
-          text: 'OK',
-          onPress: () => navigation.replace('Dashboard'), // redirect to Dashboard
-        },
-      ]);
-    } else {
+  const handleLogin = async () => {
+    if (!email || !password) {
+      Alert.alert('Error', 'Please fill all fields ❌');
+      return;
+    }
+    try {
+      await login(email, password);
+      Alert.alert('Success', 'logged in! 🎉');
+      navigation.replace('Dashboard');
+    } catch (err) {
       Alert.alert('Error', 'Invalid email or password ❌');
     }
+
   };
 
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Login </Text>
-      
+
       <TextInput
         style={styles.input}
         placeholder="Email"
@@ -52,9 +56,9 @@ export default function LoginScreen() {
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1, 
+    flex: 1,
     justifyContent: 'flex-start',
-    alignItems: 'center', 
+    alignItems: 'center',
     backgroundColor: colors.background,
     paddingHorizontal: 20,
     paddingTop: 100,
