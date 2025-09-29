@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
-import colors from '@/utils/colors';
 import CalendarView from '@/components/common/CalendarView';
 import DailyTransactions from '@/components/common/DailyTransaction';
 import { Transaction } from '@/screens/DashboardScreen';
+import colors from '@/utils/colors';
 import { Ionicons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
+import React, { useEffect, useState } from 'react';
+import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'; // 👈 added Alert
 
 export default function DashboardScreen() {
   const navigation = useNavigation<any>();
@@ -39,9 +39,37 @@ export default function DashboardScreen() {
     navigation.navigate('FullCalendar', { transactions: allTransactions });
   };
 
+  const handleLogoutConfirmed = () => {
+    // Clear user session if needed here
+    navigation.reset({
+      index: 0,
+      routes: [{ name: 'Index' }], // 👈 navigates back to Index screen
+    });
+  };
+
+  const handleLogout = () => {
+    // 👇 show confirmation popup
+    Alert.alert(
+      "Confirm Logout", // title
+      "Are you sure you want to log out?", // message
+      [
+        { text: "No", style: "cancel" }, // cancels logout
+        { text: "Yes", onPress: handleLogoutConfirmed }, // logs out if confirmed
+      ],
+      { cancelable: true } // allow dismiss on outside tap
+    );
+  };
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 50 }}>
-      <Text style={styles.title}>My Dashboard</Text>
+      {/* Header with title + logout */}
+      <View style={styles.headerContainer}>
+        <Text style={styles.title}>My Dashboard</Text>
+        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+          {/* 👆 now shows confirmation popup */}
+          <Ionicons name="log-out-outline" size={24} color={colors.white} />
+        </TouchableOpacity>
+      </View>
 
       {/* Buttons */}
       <View style={styles.buttonContainer}>
@@ -102,7 +130,9 @@ export default function DashboardScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background, paddingHorizontal: 20, paddingTop: 60 },
-  title: { fontSize: 28, color: colors.white, fontWeight: 'bold', marginBottom: 30 },
+  headerContainer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+  title: { fontSize: 28, color: colors.white, fontWeight: 'bold' },
+  logoutButton: { padding: 8 },
   buttonContainer: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 30 },
   actionButton: { flex: 0.48, height: 55, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
   buttonText: { color: colors.white, fontSize: 18, fontWeight: 'bold' },
