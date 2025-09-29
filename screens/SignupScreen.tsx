@@ -18,7 +18,7 @@ export default function SignupScreen() {
   const [password, setPassword] = useState('');
   const [rePassword, setRePassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const { setAuth } = useAuthStore(); 
+  const { signup } = useAuthStore(); 
   const navigation = useNavigation();
 
   const handleSignup = async () => {
@@ -44,45 +44,11 @@ export default function SignupScreen() {
 
     try {
       setLoading(true);
-
-      const response = await fetch(
-       'http://192.168.0.111:5000/api/auth/signup',
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name, email, password }),
-        }
-      );
-
-      console.log('Response status:', response.status);
-
-      let data;
-      try {
-        data = await response.json();
-      } catch (err) {
-        console.error('JSON parse error:', err);
-        Alert.alert('Error', 'Invalid server response ❌');
-        return;
-      }
-
-      console.log('Response data:', data);
-
-      if (!response.ok) {
-        Alert.alert('Error', data.message || 'Signup failed ❌');
-        return;
-      }
-
-      // Save token + user in Zustand
-      setAuth(data.token, data.user);
-
+      await signup(name, email, password);
       Alert.alert('Success', 'Signed up and logged in! 🎉');
-
-      // Navigate to Dashboard
       navigation.replace('Dashboard');
-
     } catch (err) {
-      console.error('Fetch error:', err);
-      Alert.alert('Error', 'Could not connect to server ❌');
+      Alert.alert('Error', err.message || 'Signup failed ❌');
     } finally {
       setLoading(false);
     }
