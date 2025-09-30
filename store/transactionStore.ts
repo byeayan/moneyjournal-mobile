@@ -20,8 +20,6 @@ interface TransactionState {
   getTransactionMetrics: () => Promise<void>;
 }
 
-const token = useAuthStore.getState().authToken;
-
 export const useTransactionStore = create<TransactionState>((set, get) => ({
   transactions: [],
   setTransactions: (transactions: Transaction[]) => set({ transactions }),
@@ -48,6 +46,30 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
   },
 
   getTransactionMetrics: async () => {
-    // Ayan
+    try {
+      const token = useAuthStore.getState().authToken;
+
+      if (!token) throw new Error("No auth token found");
+
+      const response = await fetch(`${API_BASE_URL}/transactions/metrics`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to fetch transaction metrics');
+      }
+
+      // data contains metrics like totalIncome, totalExpense, balance
+      return data;
+    } catch (error) {
+      console.error("Error fetching transaction metrics:", error);
+      throw error;
+    }
   }
-}));
+}))

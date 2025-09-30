@@ -1,13 +1,16 @@
-import React from 'react';
-import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import DailyTransactionScreen from '@/screens/DailyTransactionScreen';
+import DashboardScreen from '@/screens/DashboardScreen';
+import ExpenseScreen from '@/screens/ExpenseScreen';
+import FullCalendarScreen from '@/screens/FullCalendarScreen'; // <-- new screen
+import IncomeScreen from '@/screens/IncomeScreen';
 import IndexScreen from '@/screens/IndexScreen';
 import LoginScreen from '@/screens/LoginScreen';
 import SignupScreen from '@/screens/SignupScreen';
-import DashboardScreen from '@/screens/DashboardScreen';
-import IncomeScreen from '@/screens/IncomeScreen';
-import ExpenseScreen from '@/screens/ExpenseScreen';
-import DailyTransactionScreen from '@/screens/DailyTransactionScreen';
-import FullCalendarScreen from '@/screens/FullCalendarScreen'; // <-- new screen
+import colors from '@/utils/colors';
+import { Ionicons } from '@expo/vector-icons';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import React from 'react';
+import { Alert, TouchableOpacity } from 'react-native';
 
 import type { Transaction } from '@/screens/DashboardScreen';
 
@@ -50,7 +53,37 @@ export default function AppNavigator() {
       <Stack.Screen
         name="Dashboard"
         component={DashboardScreen}
-        options={{ headerShown: false }}
+        options={({ navigation }) => ({
+          title: 'Dashboard',
+          headerStyle: { backgroundColor: colors.background },
+          headerTintColor: colors.white,
+          headerTitleStyle: { fontWeight: 'bold', fontSize: 28 },
+          headerRight: () => (
+            <TouchableOpacity
+              onPress={() => {
+                console.log('Logout button pressed');
+                Alert.alert(
+                  "Confirm Logout",
+                  "Are you sure you want to log out?",
+                  [
+                    { text: "No", style: "cancel" },
+                    { 
+                      text: "Yes", 
+                      onPress: () => navigation.reset({
+                        index: 0,
+                        routes: [{ name: 'Index' }],
+                      })
+                    },
+                  ],
+                  { cancelable: true }
+                );
+              }}
+              style={{ padding: 8 }}
+            >
+              <Ionicons name="log-out-outline" size={24} color={colors.white} />
+            </TouchableOpacity>
+          ),
+        })}
       />
       <Stack.Screen
         name="Income"
