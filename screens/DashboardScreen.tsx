@@ -15,26 +15,22 @@ import {
 
 export default function DashboardScreen() {
     const navigation = useNavigation<any>();
-    const { fetchTransactions, transactions } = useTransactionStore();
+    const { fetchTransactions, transactions, getTransactionMetrics, transactionMetrics } = useTransactionStore();
     const [selectedDate, setSelectedDate] = useState(new Date());
     // const [transactions, setTransactions] = useState<Transaction[]>([]);
 
     useEffect(() => {
         const loadTransactions = async () => {
             await fetchTransactions(selectedDate);
+            await getTransactionMetrics();
             // const filtered = transactions;
             // setTransactions(filtered);
         };
 
         loadTransactions();
+        console.log("transac:", transactions);
+        console.log("metr", transactionMetrics)
     }, [selectedDate]);
-
-    const dailyIncome = transactions
-        .filter((t) => t.type === "income")
-        .reduce((sum, t) => sum + t.amount, 0);
-    const dailyExpense = transactions
-        .filter((t) => t.type === "expense")
-        .reduce((sum, t) => sum + t.amount, 0);
 
     const handleMaximizeCalendar = () => {
         navigation.navigate("FullCalendar", { transactions: transactions });
@@ -105,10 +101,10 @@ export default function DashboardScreen() {
             {/* Daily totals */}
             <View style={styles.dailyTotals}>
                 <Text style={styles.dailyTotalText}>
-                    Income: +${dailyIncome}
+                    Monthly Income: +${transactionMetrics?.monthlyIncome}
                 </Text>
                 <Text style={styles.dailyTotalText}>
-                    Expense: -${dailyExpense}
+                    Monthly Expense: -${transactionMetrics?.monthlyExpense}
                 </Text>
             </View>
 

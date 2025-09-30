@@ -1,23 +1,25 @@
+import DropdownField from "@/components/common/DropdownField";
+import { useTransactionStore } from "@/store/transactionStore";
+import { expenseCategories } from "@/utils/categories";
+import colors from "@/utils/colors";
+import { useNavigation } from "@react-navigation/native";
 import React, { useEffect, useState } from "react";
 import {
-  View,
-  Text,
-  TouchableOpacity,
-  StyleSheet,
-  Platform,
-  TextInput,
   Keyboard,
+  Platform,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
   TouchableWithoutFeedback,
+  View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { useNavigation } from "@react-navigation/native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
-import colors from "@/utils/colors";
-import DropdownField from "@/components/common/DropdownField";
-import { expenseCategories } from "@/utils/categories";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function ExpenseScreen() {
   const navigation = useNavigation();
+  const { addTransaction } = useTransactionStore();
 
   const [dateStr, setDateStr] = useState<string>("");
   const [timeStr, setTimeStr] = useState<string>("");
@@ -122,12 +124,12 @@ export default function ExpenseScreen() {
               onSelect={setCategory}
             />
 
-            <DropdownField
+            {/* <DropdownField
               label="Account"
               value={account}
               options={accounts}
               onSelect={setAccount}
-            />
+            /> */}
 
             <View style={styles.field}>
               <Text style={styles.label}>Note</Text>
@@ -138,6 +140,7 @@ export default function ExpenseScreen() {
                 value={note}
                 onChangeText={setNote}
                 returnKeyType="done"
+                onFocus={() => setKeypadVisible(false)}
               />
             </View>
 
@@ -150,16 +153,33 @@ export default function ExpenseScreen() {
                 value={description}
                 onChangeText={setDescription}
                 multiline
+                onFocus={() => setKeypadVisible(false)}
               />
             </View>
 
             <View style={styles.buttonsRow}>
-              <TouchableOpacity style={styles.saveButton}>
+              <TouchableOpacity 
+                style={styles.saveButton}
+                onPress={async () => {
+                  if (!amount || !category) return;
+                  await addTransaction({
+                    amount: parseFloat(amount),
+                    description: description || note,
+                    category,
+                    type: "expense",
+                    date: new Date().toISOString()
+                  });
+                  navigation.goBack();
+                }}
+              >
                 <Text style={styles.saveText}>Save</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.continueButton}>
-                <Text style={styles.continueText}>Continue</Text>
+              <TouchableOpacity 
+                style={styles.continueButton}
+                onPress={() => navigation.goBack()}
+              >
+                <Text style={styles.continueText}>Back</Text>
               </TouchableOpacity>
             </View>
           </KeyboardAwareScrollView>

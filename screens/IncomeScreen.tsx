@@ -2,6 +2,7 @@ import DropdownField from "@/components/common/DropdownField";
 import { incomeCategories } from "@/utils/categories";
 import colors from "@/utils/colors";
 import { useNavigation } from "@react-navigation/native";
+import { useTransactionStore } from "@/store/transactionStore";
 import React, { useEffect, useState } from "react";
 import {
   Keyboard,
@@ -18,6 +19,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function IncomeScreen() {
   const navigation = useNavigation();
+  const { addTransaction } = useTransactionStore();
 
   const [dateStr, setDateStr] = useState<string>("");
   const [timeStr, setTimeStr] = useState<string>("");
@@ -139,6 +141,7 @@ export default function IncomeScreen() {
                 value={note}
                 onChangeText={setNote}
                 returnKeyType="done"
+                onFocus={() => setKeypadVisible(false)}
               />
             </View>
 
@@ -151,16 +154,33 @@ export default function IncomeScreen() {
                 value={description}
                 onChangeText={setDescription}
                 multiline
+                onFocus={() => setKeypadVisible(false)}
               />
             </View>
 
             <View style={styles.buttonsRow}>
-              <TouchableOpacity style={styles.saveButton}>
+              <TouchableOpacity 
+                style={styles.saveButton}
+                onPress={async () => {
+                  if (!amount || !category) return;
+                  await addTransaction({
+                    amount: parseFloat(amount),
+                    description: description || note,
+                    category,
+                    type: "income",
+                    date: new Date().toISOString()
+                  });
+                  navigation.goBack();
+                }}
+              >
                 <Text style={styles.saveText}>Save</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.continueButton}>
-                <Text style={styles.continueText}>Continue</Text>
+              <TouchableOpacity 
+                style={styles.continueButton}
+                onPress={() => navigation.goBack()}
+              >
+                <Text style={styles.continueText}>Back</Text>
               </TouchableOpacity>
             </View>
           </KeyboardAwareScrollView>
