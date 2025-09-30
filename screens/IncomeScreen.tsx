@@ -1,20 +1,20 @@
-import React, { useEffect, useState } from "react";
-import {
-  View,
-  Text,
-  TouchableOpacity,
-  StyleSheet,
-  Platform,
-  TextInput,
-  Keyboard,
-  TouchableWithoutFeedback,
-} from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { useNavigation } from "@react-navigation/native";
-import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
-import colors from "@/utils/colors";
 import DropdownField from "@/components/common/DropdownField";
 import { incomeCategories } from "@/utils/categories";
+import colors from "@/utils/colors";
+import { useNavigation } from "@react-navigation/native";
+import React, { useEffect, useState } from "react";
+import {
+  Keyboard,
+  Platform,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  TouchableWithoutFeedback,
+  View,
+} from "react-native";
+import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function IncomeScreen() {
   const navigation = useNavigation();
@@ -123,12 +123,12 @@ export default function IncomeScreen() {
               onSelect={setCategory}
             />
 
-            <DropdownField
+            {/* <DropdownField
               label="Account"
               value={account}
               options={accounts}
               onSelect={setAccount}
-            />
+            /> */}
 
             <View style={styles.field}>
               <Text style={styles.label}>Note</Text>
