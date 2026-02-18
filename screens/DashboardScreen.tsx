@@ -5,8 +5,8 @@ import { useTransactionStore } from "@/store/transactionStore";
 import colors from "@/utils/colors";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
-import { useEffect, useState } from "react";
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { useEffect, useMemo, useState } from "react";
+import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 function formatCurrency(value: number | undefined) {
@@ -27,23 +27,56 @@ export default function DashboardScreen() {
     fetchTransactionsByMonth,
     transactions,
     calendarTransactions,
-    getTransactionMetrics,
-    transactionMetrics,
   } = useTransactionStore();
 
   const [selectedDate, setSelectedDate] = useState(new Date());
+  const [showAllRecent, setShowAllRecent] = useState(false);
 
   useEffect(() => {
+    let active = true;
+
     const loadTransactions = async () => {
-      await Promise.all([
-        fetchTransactions(selectedDate),
-        fetchTransactionsByMonth(selectedDate),
-        getTransactionMetrics(),
-      ]);
+      try {
+        await Promise.all([
+          fetchTransactions(selectedDate),
+          fetchTransactionsByMonth(selectedDate),
+        ]);
+      } catch (error) {
+        if (!active) return;
+        const message = error instanceof Error ? error.message : "Failed to load transactions.";
+        Alert.alert("Error", message);
+      }
     };
 
     loadTransactions();
+    return () => {
+      active = false;
+    };
   }, [selectedDate]);
+
+  const monthlyIncome = useMemo(
+    () =>
+      calendarTransactions
+        .filter((transaction) => transaction.type === "income")
+        .reduce((sum, transaction) => sum + Number(transaction.amount || 0), 0),
+    [calendarTransactions]
+  );
+
+  const monthlyExpense = useMemo(
+    () =>
+      calendarTransactions
+        .filter((transaction) => transaction.type === "expense")
+        .reduce((sum, transaction) => sum + Number(transaction.amount || 0), 0),
+    [calendarTransactions]
+  );
+
+  const recentTransactions = useMemo(
+    () =>
+      [...calendarTransactions].sort(
+        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+      ),
+    [calendarTransactions]
+  );
 
   const handleMaximizeCalendar = () => {
     navigation.navigate("FullCalendar", {
@@ -57,9 +90,6 @@ export default function DashboardScreen() {
       <ScrollView style={styles.container} contentContainerStyle={{ paddingTop: 10, paddingBottom: 50 }}>
         <View style={styles.topHeader}>
           <Text style={styles.title}>{`Welcome, ${displayName}`}</Text>
-          <TouchableOpacity style={styles.profileButton} onPress={() => navigation.navigate("Profile")}>
-            <Ionicons name="person-circle-outline" size={30} color={colors.white} />
-          </TouchableOpacity>
         </View>
 
         <View style={styles.buttonContainer}>
@@ -112,17 +142,33 @@ export default function DashboardScreen() {
         <View style={styles.monthlyTotals}>
           <View style={styles.totalCard}>
             <Text style={styles.totalLabel}>Monthly Income</Text>
-            <Text style={[styles.totalValue, styles.incomeValue]}>+${formatCurrency(transactionMetrics?.monthlyIncome)}</Text>
+            <Text style={[styles.totalValue, styles.incomeValue]}>+${formatCurrency(monthlyIncome)}</Text>
           </View>
           <View style={styles.totalCard}>
             <Text style={styles.totalLabel}>Monthly Expense</Text>
-            <Text style={[styles.totalValue, styles.expenseValue]}>-${formatCurrency(transactionMetrics?.monthlyExpense)}</Text>
+            <Text style={[styles.totalValue, styles.expenseValue]}>-${formatCurrency(monthlyExpense)}</Text>
           </View>
         </View>
 
         <View style={styles.transactionsContainer}>
-          <Text style={styles.sectionTitle}>Transactions</Text>
-          <DailyTransactions transactions={transactions} />
+          <View style={styles.transactionsHeader}>
+            <Text style={styles.sectionTitle}>Recent Transactions</Text>
+            <TouchableOpacity
+              style={styles.viewAllToggle}
+              onPress={() => setShowAllRecent((prev) => !prev)}
+            >
+              <Text style={styles.viewDayText}>{showAllRecent ? "Hide" : "View All"}</Text>
+              <Ionicons
+                name={showAllRecent ? "chevron-up" : "chevron-down"}
+                size={16}
+                color={colors.highlight}
+              />
+            </TouchableOpacity>
+          </View>
+          <DailyTransactions
+            transactions={recentTransactions}
+            maxItems={showAllRecent ? undefined : 3}
+          />
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -142,7 +188,6 @@ const styles = StyleSheet.create({
   topHeader: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
     marginBottom: 16,
   },
   title: {
@@ -151,14 +196,6 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     flex: 1,
     marginRight: 10,
-  },
-  profileButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: colors.surface,
   },
   buttonContainer: {
     flexDirection: "row",
@@ -223,6 +260,22 @@ const styles = StyleSheet.create({
   },
   expenseValue: {
     color: "#f1948a",
+  },
+  transactionsHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 10,
+  },
+  viewDayText: {
+    color: colors.highlight,
+    fontWeight: "700",
+    fontSize: 14,
+  },
+  viewAllToggle: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
   },
   transactionsContainer: { marginBottom: 20 },
 });

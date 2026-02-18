@@ -29,7 +29,7 @@ export default function LoginScreen() {
       setLoading(true);
       await login(email, password);
       Alert.alert('Success', 'Logged in');
-      navigation.replace('Dashboard');
+      navigation.replace('AppTabs', { screen: 'HomeTab' });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Login failed';
       Alert.alert('Error', message);

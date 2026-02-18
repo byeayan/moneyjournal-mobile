@@ -30,6 +30,7 @@ export default function DropdownField({ label, value, options, onSelect }: Props
         <Text style={styles.inputText}>
           {value ? value : `Select ${label.toLowerCase()}`}
         </Text>
+        <Text style={styles.arrow}>▼</Text>
       </TouchableOpacity>
 
       <Modal visible={visible} transparent animationType="fade">
@@ -64,15 +65,29 @@ export default function DropdownField({ label, value, options, onSelect }: Props
 }
 
 const styles = StyleSheet.create({
-  field: { marginTop: 12 },
+  field: { marginTop: 12, marginBottom: 10 },
   label: { color: colors.light, marginBottom: 4, fontSize: 14 },
   inputBox: {
-    borderBottomWidth: 1,
-    borderColor: colors.surface,
-    height: 44,
-    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: colors.highlight,
+    borderRadius: 8,
+    minHeight: 44,
+    paddingHorizontal: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
   },
-  inputText: { color: colors.white, fontSize: 16 },
+  inputText: {
+    color: colors.white,
+    fontSize: 16,
+    flex: 1,
+    paddingRight: 10,
+  },
+  arrow: {
+    color: colors.light,
+    fontSize: 12,
+    fontWeight: "700",
+  },
 
   modalBackdrop: {
     flex: 1,

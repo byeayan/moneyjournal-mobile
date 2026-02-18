@@ -235,7 +235,8 @@ export default function IncomeScreen({ navigation, route }: IncomeScreenProps) {
 
                   await addTransaction({
                     amount: parseFloat(amount),
-                    description: description || note,
+                    note: note.trim(),
+                    description: description.trim(),
                     category,
                     type: "income",
                     date: txDate.toISOString(),

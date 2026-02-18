@@ -13,6 +13,17 @@ type CalendarViewProps = {
   theme?: Record<string, unknown>;
 };
 
+function toLocalDateKey(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(
+    date.getDate()
+  ).padStart(2, '0')}`;
+}
+
+function parseLocalDateString(dateString: string) {
+  const [year, month, day] = dateString.split('-').map(Number);
+  return new Date(year, (month || 1) - 1, day || 1);
+}
+
 export default function CalendarView({
   selectedDate,
   onDateSelect,
@@ -26,7 +37,7 @@ export default function CalendarView({
   useEffect(() => {
     const marks: any = {};
     transactions.forEach((t) => {
-      const dateStr = new Date(t.date).toISOString().split('T')[0];
+      const dateStr = toLocalDateKey(new Date(t.date));
       if (!marks[dateStr]) marks[dateStr] = { dots: [] };
       marks[dateStr].dots.push({
         key: `${t.id}-${marks[dateStr].dots.length}`,
@@ -34,7 +45,7 @@ export default function CalendarView({
       });
     });
 
-    const selectedStr = selectedDate.toISOString().split('T')[0];
+    const selectedStr = toLocalDateKey(selectedDate);
     marks[selectedStr] = {
       ...(marks[selectedStr] || {}),
       selected: true,
@@ -68,16 +79,10 @@ export default function CalendarView({
 
   return (
     <View style={styles.container}>
-      <View style={styles.monthHeader}>
-        <Text style={styles.monthText}>
-          {selectedDate.toLocaleString('default', { month: 'long', year: 'numeric' })}
-        </Text>
-      </View>
-
       <Calendar
-        current={selectedDate.toISOString().split('T')[0]}
-        onDayPress={(day: DateData) => onDateSelect(new Date(day.dateString))}
-        onMonthChange={(month) => onDateSelect(new Date(month.dateString))}
+        current={toLocalDateKey(selectedDate)}
+        onDayPress={(day: DateData) => onDateSelect(parseLocalDateString(day.dateString))}
+        onMonthChange={(month) => onDateSelect(parseLocalDateString(month.dateString))}
         markingType={'multi-dot'}
         markedDates={markedDates}
         hideExtraDays={false}
@@ -102,16 +107,5 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     overflow: 'hidden',
     backgroundColor: colors.surface,
-  },
-  monthHeader: {
-    backgroundColor: colors.surface,
-    paddingVertical: 6,
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  monthText: {
-    color: colors.white,
-    fontSize: 18,
-    fontWeight: 'bold',
   },
 });

@@ -235,7 +235,8 @@ export default function ExpenseScreen({ navigation, route }: ExpenseScreenProps)
 
                   await addTransaction({
                     amount: parseFloat(amount),
-                    description: description || note,
+                    note: note.trim(),
+                    description: description.trim(),
                     category,
                     type: "expense",
                     date: txDate.toISOString(),

@@ -1,7 +1,6 @@
-import type { RootStackParamList } from "@/navigation/AppNavigator";
 import { useAuthStore } from "@/store/authStore";
 import colors from "@/utils/colors";
-import type { NativeStackScreenProps } from "@react-navigation/native-stack";
+import { useNavigation } from "@react-navigation/native";
 import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -17,7 +16,6 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Calendar, DateData } from "react-native-calendars";
 
-type ProfileScreenProps = NativeStackScreenProps<RootStackParamList, "Profile">;
 type Gender = "male" | "female" | "other" | "prefer_not_to_say";
 
 const genderLabel: Record<Gender, string> = {
@@ -34,7 +32,8 @@ function toDateInput(value?: string) {
   return d.toISOString().split("T")[0];
 }
 
-export default function ProfileScreen({ navigation }: ProfileScreenProps) {
+export default function ProfileScreen() {
+  const navigation = useNavigation<any>();
   const { user, fetchCurrentUser, updateCurrentUser, deleteCurrentUser, logout } = useAuthStore();
 
   const [username, setUsername] = useState("");
@@ -44,6 +43,15 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
   const [gender, setGender] = useState<Gender>("prefer_not_to_say");
   const [loading, setLoading] = useState(false);
   const [showDobPicker, setShowDobPicker] = useState(false);
+
+  const resetToAuth = () => {
+    const parent = navigation.getParent();
+    if (parent) {
+      parent.reset({ index: 0, routes: [{ name: "Index" }] });
+      return;
+    }
+    navigation.reset({ index: 0, routes: [{ name: "Index" }] });
+  };
 
   useEffect(() => {
     const load = async () => {
@@ -139,7 +147,7 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
             try {
               setLoading(true);
               await deleteCurrentUser();
-              navigation.reset({ index: 0, routes: [{ name: "Index" }] });
+              resetToAuth();
             } catch (error) {
               const message = error instanceof Error ? error.message : "Delete failed";
               Alert.alert("Error", message);
@@ -208,7 +216,7 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
           style={styles.secondaryBtn}
           onPress={() => {
             logout();
-            navigation.reset({ index: 0, routes: [{ name: "Index" }] });
+            resetToAuth();
           }}
           disabled={loading}
         >
