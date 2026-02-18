@@ -1,11 +1,11 @@
 // screens/FullCalendarScreen.tsx
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
-import { Calendar, DateData } from 'react-native-calendars';
+import type { Transaction } from '@/types/transaction';
 import colors from '@/utils/colors';
-import { Transaction } from './DashboardScreen';
 import { Ionicons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
+import React, { useEffect, useState } from 'react';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Calendar, DateData } from 'react-native-calendars';
 
 interface FullCalendarScreenProps {
   route: {

@@ -1,35 +1,34 @@
 import { API_BASE_URL } from '@/config/api';
+import { Transaction, TransactionMetrics } from '@/types/transaction';
 import { create } from 'zustand';
 import { useAuthStore } from './authStore';
 
-
-interface Transaction {
-  id: string;
-  amount: number;
-  description: string;
-  category: string;
-  type: 'income' | 'expense';
-  date: string;
-}
-
-interface TransactionMetrics {
-  monthlyIncome: number;
-  monthlyExpense: number;
+function normalizeTransaction(raw: any): Transaction {
+  return {
+    id: raw?.id ?? raw?._id ?? `${Date.now()}-${Math.random()}`,
+    amount: Number(raw?.amount ?? 0),
+    description: raw?.description ?? '',
+    category: raw?.category ?? 'Other',
+    type: raw?.type === 'income' ? 'income' : 'expense',
+    date: raw?.date ?? raw?.createdAt ?? new Date().toISOString(),
+    account: raw?.account,
+  };
 }
 
 interface TransactionState {
   transactions: Transaction[];
-  transactionMetrics: TransactionMetrics
+  transactionMetrics: TransactionMetrics;
   setTransactions: (transactions: Transaction[]) => void;
   addTransaction: (transaction: Omit<Transaction, 'id'>) => Promise<void>;
-  fetchTransactions: (date) => Promise<void>;
-  getTransactionMetrics: () => Promise<void>;
+  fetchTransactions: (date: Date | string) => Promise<void>;
+  getTransactionMetrics: () => Promise<TransactionMetrics>;
 }
 
 
 
 export const useTransactionStore = create<TransactionState>((set, get) => ({
   transactions: [],
+  transactionMetrics: { monthlyIncome: 0, monthlyExpense: 0 },
   setTransactions: (transactions: Transaction[]) => set({ transactions }),
   addTransaction: async (transaction) => {
     // ZIYAUDDIN
@@ -59,14 +58,13 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
       }
 
       // 3. Update the local state with the newly created transaction
-      const createdTransaction = responseData.transaction; // Backend sends the created object
+      const createdTransaction = normalizeTransaction(responseData.transaction);
 
       set((state) => ({
         // Add the new transaction to the start of the list
         transactions: [createdTransaction, ...state.transactions],
-        // refresh metrics by API call
-        transactionMetrics: get().getTransactionMetrics()
       }));
+      await get().getTransactionMetrics();
 
       console.log('Transaction added successfully:', createdTransaction);
 
@@ -84,8 +82,10 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
       throw error;
     }
   },
-  fetchTransactions: async (date) => {
+  fetchTransactions: async (date: Date | string) => {
     const token = useAuthStore.getState().authToken;
+    if (!token) throw new Error('No auth token found');
+
     const today = new Date(date).toISOString().split("T")[0];
 
     const response = await fetch(`${API_BASE_URL}/transactions?date=${today}`, {
@@ -98,14 +98,14 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
 
     const data = await response.json();
     if (response.ok) {
-      set({ transactions: data });
+      const normalized = Array.isArray(data) ? data.map(normalizeTransaction) : [];
+      set({ transactions: normalized });
     } else {
       throw new Error(data.message || "Fetching transactions failed");
     }
   },
 
   getTransactionMetrics: async () => {
-    const token = useAuthStore.getState().authToken;
     try {
       const token = useAuthStore.getState().authToken;
 

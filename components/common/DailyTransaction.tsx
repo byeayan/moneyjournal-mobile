@@ -1,7 +1,7 @@
-import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import type { Transaction } from '@/types/transaction';
 import colors from '@/utils/colors';
-import { Transaction } from '@/screens/DashboardScreen';
+import React from 'react';
+import { StyleSheet, Text, View } from 'react-native';
 
 interface DailyTransactionsProps {
   transactions: Transaction[];
@@ -14,8 +14,8 @@ const DailyTransactions: React.FC<DailyTransactionsProps> = ({ transactions }) =
 
   return (
     <View>
-      {transactions.map((t) => (
-        <View key={t.id} style={styles.transactionCard}>
+      {transactions.map((t, index) => (
+        <View key={`${t.id}-${index}`} style={styles.transactionCard}>
           <Text style={styles.transactionText}>
             {t.description || t.category}: {t.type === 'income' ? `+${t.amount}` : `-${t.amount}`}
           </Text>

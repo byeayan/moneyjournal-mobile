@@ -65,6 +65,12 @@ export default function DashboardScreen() {
                     <Text style={styles.buttonText}>+ Expense</Text>
                 </TouchableOpacity>
             </View>
+            <TouchableOpacity
+                style={[styles.analyticsButton, { backgroundColor: colors.highlight }]}
+                onPress={() => navigation.navigate("Analytics")}
+            >
+                <Text style={styles.buttonText}>View Analytics</Text>
+            </TouchableOpacity>
 
             {/* Calendar */}
             <View style={styles.calendarContainer}>
@@ -133,7 +139,7 @@ const styles = StyleSheet.create({
     buttonContainer: {
         flexDirection: "row",
         justifyContent: "space-between",
-        marginBottom: 30,
+        marginBottom: 12,
     },
     actionButton: {
         flex: 0.48,
@@ -143,6 +149,13 @@ const styles = StyleSheet.create({
         alignItems: "center",
     },
     buttonText: { color: colors.white, fontSize: 18, fontWeight: "bold" },
+    analyticsButton: {
+        height: 50,
+        borderRadius: 10,
+        justifyContent: "center",
+        alignItems: "center",
+        marginBottom: 24,
+    },
     calendarContainer: { marginBottom: 10 },
     calendarHeader: {
         flexDirection: "row",

@@ -1,5 +1,5 @@
 // utils/calendar.ts
-import { Transaction } from '@/screens/DashboardScreen';
+import type { Transaction } from '@/types/transaction';
 
 export type DayItem = {
   date: Date;

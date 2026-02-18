@@ -1,16 +1,8 @@
-import React from 'react';
-import { View, Text, FlatList, StyleSheet, TouchableOpacity } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import type { Transaction } from '@/types/transaction';
 import colors from '@/utils/colors';
-
-type Transaction = {
-  id: string;
-  type: 'income' | 'expense';
-  amount: number;
-  category: string;
-  account: string;
-  date: string; // ISO string
-};
+import { useNavigation } from '@react-navigation/native';
+import React from 'react';
+import { FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 interface DailyTransactionScreenProps {
   route: {

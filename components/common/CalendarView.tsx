@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
-import { Calendar, DateData } from 'react-native-calendars';
+import type { Transaction } from '@/types/transaction';
 import colors from '@/utils/colors';
-import { Transaction } from '@/screens/DashboardScreen';
+import React, { useEffect, useState } from 'react';
+import { StyleSheet, Text, View } from 'react-native';
+import { Calendar, DateData } from 'react-native-calendars';
 
 type CalendarViewProps = {
   selectedDate: Date;
@@ -10,6 +10,7 @@ type CalendarViewProps = {
   transactions: Transaction[];
   showFullScreen?: boolean;
   cellHeight?: number;
+  theme?: Record<string, unknown>;
 };
 
 export default function CalendarView({
@@ -18,6 +19,7 @@ export default function CalendarView({
   transactions,
   showFullScreen = false,
   cellHeight = 32,
+  theme,
 }: CalendarViewProps) {
   const [markedDates, setMarkedDates] = useState<any>({});
 
@@ -88,6 +90,7 @@ export default function CalendarView({
           textDayFontSize: showFullScreen ? 20 : 16,
           textMonthFontSize: showFullScreen ? 24 : 18,
           textDayHeaderFontSize: showFullScreen ? 16 : 14,
+          ...(theme ?? {}),
         }}
         style={showFullScreen ? { height: '100%' } : {}}
       />

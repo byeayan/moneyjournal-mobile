@@ -1,3 +1,4 @@
+import AnalyticsScreen from '@/screens/AnalyticsScreen';
 import DailyTransactionScreen from '@/screens/DailyTransactionScreen';
 import DashboardScreen from '@/screens/DashboardScreen';
 import ExpenseScreen from '@/screens/ExpenseScreen';
@@ -12,7 +13,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import React from 'react';
 import { Alert, TouchableOpacity } from 'react-native';
 
-import type { Transaction } from '@/screens/DashboardScreen';
+import type { Transaction } from '@/types/transaction';
 
 export type RootStackParamList = {
   Index: undefined;
@@ -21,6 +22,7 @@ export type RootStackParamList = {
   Dashboard: undefined;
   Income: undefined;
   Expense: undefined;
+  Analytics: undefined;
   DailyTransaction: { date: string; transactions: Transaction[] };
   FullCalendar: { transactions: Transaction[] }; // <-- added
 };
@@ -93,6 +95,11 @@ export default function AppNavigator() {
       <Stack.Screen
         name="Expense"
         component={ExpenseScreen}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="Analytics"
+        component={AnalyticsScreen}
         options={{ headerShown: false }}
       />
 
