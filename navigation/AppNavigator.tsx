@@ -8,8 +8,10 @@ import IndexScreen from '@/screens/IndexScreen';
 import LoginScreen from '@/screens/LoginScreen';
 import ProfileScreen from '@/screens/ProfileScreen';
 import SignupScreen from '@/screens/SignupScreen';
+import { useAuthStore } from '@/store/authStore';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import React from 'react';
+import { ActivityIndicator, View } from 'react-native';
 
 import type { Transaction } from '@/types/transaction';
 
@@ -29,8 +31,18 @@ export type RootStackParamList = {
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export default function AppNavigator() {
+  const { isHydrated, isLoggedIn } = useAuthStore();
+
+  if (!isHydrated) {
+    return (
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+        <ActivityIndicator />
+      </View>
+    );
+  }
+
   return (
-    <Stack.Navigator initialRouteName="Index">
+    <Stack.Navigator initialRouteName={isLoggedIn ? 'Dashboard' : 'Index'}>
       <Stack.Screen
         name="Index"
         component={IndexScreen}
