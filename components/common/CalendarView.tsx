@@ -23,14 +23,13 @@ export default function CalendarView({
 }: CalendarViewProps) {
   const [markedDates, setMarkedDates] = useState<any>({});
 
-  // Mark dates with transactions and selected date
   useEffect(() => {
     const marks: any = {};
     transactions.forEach((t) => {
       const dateStr = new Date(t.date).toISOString().split('T')[0];
       if (!marks[dateStr]) marks[dateStr] = { dots: [] };
       marks[dateStr].dots.push({
-        key: t.id,
+        key: `${t.id}-${marks[dateStr].dots.length}`,
         color: t.type === 'income' ? colors.primary : colors.highlight,
       });
     });
@@ -69,7 +68,6 @@ export default function CalendarView({
 
   return (
     <View style={styles.container}>
-      {/* Month Header */}
       <View style={styles.monthHeader}>
         <Text style={styles.monthText}>
           {selectedDate.toLocaleString('default', { month: 'long', year: 'numeric' })}
@@ -79,6 +77,7 @@ export default function CalendarView({
       <Calendar
         current={selectedDate.toISOString().split('T')[0]}
         onDayPress={(day: DateData) => onDateSelect(new Date(day.dateString))}
+        onMonthChange={(month) => onDateSelect(new Date(month.dateString))}
         markingType={'multi-dot'}
         markedDates={markedDates}
         hideExtraDays={false}

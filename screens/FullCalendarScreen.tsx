@@ -1,24 +1,45 @@
-// screens/FullCalendarScreen.tsx
+import type { RootStackParamList } from '@/navigation/AppNavigator';
+import { useTransactionStore } from '@/store/transactionStore';
 import type { Transaction } from '@/types/transaction';
 import colors from '@/utils/colors';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
-import React, { useEffect, useState } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Calendar, DateData } from 'react-native-calendars';
 
-interface FullCalendarScreenProps {
-  route: {
-    params: {
-      transactions: Transaction[];
-    };
-  };
-}
+type FullCalendarScreenProps = NativeStackScreenProps<RootStackParamList, 'FullCalendar'>;
 
 export default function FullCalendarScreen({ route }: FullCalendarScreenProps) {
   const navigation = useNavigation<any>();
-  const { transactions: allTransactions } = route.params;
-  const [selectedDate, setSelectedDate] = useState(new Date());
+  const { fetchTransactionsByMonth, calendarTransactions } = useTransactionStore();
+
+  const initialDate = route.params?.selectedDate ? new Date(route.params.selectedDate) : new Date();
+  const [selectedDate, setSelectedDate] = useState(initialDate);
+
+  useEffect(() => {
+    fetchTransactionsByMonth(selectedDate);
+  }, [selectedDate]);
+
+  const allTransactions = useMemo<Transaction[]>(
+    () => (calendarTransactions.length ? calendarTransactions : route.params?.transactions ?? []),
+    [calendarTransactions, route.params?.transactions]
+  );
+
+  const handleAddPress = () => {
+    Alert.alert('Add Transaction', 'Choose transaction type', [
+      {
+        text: 'Income',
+        onPress: () => navigation.navigate('Income', { date: selectedDate.toISOString() }),
+      },
+      {
+        text: 'Expense',
+        onPress: () => navigation.navigate('Expense', { date: selectedDate.toISOString() }),
+      },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  };
 
   const handleDateSelect = (date: Date) => {
     const filteredTransactions = allTransactions.filter((t) => {
@@ -37,7 +58,6 @@ export default function FullCalendarScreen({ route }: FullCalendarScreenProps) {
     setSelectedDate(date);
   };
 
-  // Prepare marked dates with transaction dots and selected highlight
   const [markedDates, setMarkedDates] = useState<any>({});
   useEffect(() => {
     const marks: any = {};
@@ -45,7 +65,7 @@ export default function FullCalendarScreen({ route }: FullCalendarScreenProps) {
       const dateStr = new Date(t.date).toISOString().split('T')[0];
       if (!marks[dateStr]) marks[dateStr] = { dots: [] };
       marks[dateStr].dots.push({
-        key: t.id,
+        key: `${t.id}-${marks[dateStr].dots.length}`,
         color: t.type === 'income' ? colors.primary : colors.highlight,
       });
     });
@@ -63,7 +83,6 @@ export default function FullCalendarScreen({ route }: FullCalendarScreenProps) {
 
   return (
     <View style={styles.container}>
-      {/* Back Button */}
       <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
         <Ionicons name="arrow-back" size={22} color={colors.white} />
         <Text style={styles.backButtonText}>Back</Text>
@@ -75,6 +94,7 @@ export default function FullCalendarScreen({ route }: FullCalendarScreenProps) {
         <Calendar
           current={selectedDate.toISOString().split('T')[0]}
           onDayPress={(day: DateData) => handleDateSelect(new Date(day.dateString))}
+          onMonthChange={(month) => setSelectedDate(new Date(month.dateString))}
           markingType={'multi-dot'}
           markedDates={markedDates}
           hideExtraDays={false}
@@ -84,7 +104,7 @@ export default function FullCalendarScreen({ route }: FullCalendarScreenProps) {
             arrowColor: colors.primary,
             monthTextColor: colors.highlight,
             textDayFontSize: 16,
-            textMonthFontSize: 22, // bigger for month name
+            textMonthFontSize: 22,
             textDayHeaderFontSize: 14,
             selectedDayBackgroundColor: colors.primary,
             selectedDayTextColor: colors.white,
@@ -93,8 +113,7 @@ export default function FullCalendarScreen({ route }: FullCalendarScreenProps) {
         />
       </View>
 
-      {/* Floating Add Button */}
-      <TouchableOpacity style={styles.fab}>
+      <TouchableOpacity style={styles.fab} onPress={handleAddPress}>
         <Ionicons name="add" size={28} color={colors.white} />
       </TouchableOpacity>
     </View>
@@ -104,16 +123,16 @@ export default function FullCalendarScreen({ route }: FullCalendarScreenProps) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background, padding: 10 },
   backButton: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: 'row',
+    alignItems: 'center',
     marginBottom: 10,
     paddingVertical: 6,
     paddingHorizontal: 12,
     backgroundColor: colors.surface,
     borderRadius: 8,
   },
-  backButtonText: { color: colors.white, fontWeight: "bold", marginLeft: 6 },
-  title: { fontSize: 24, fontWeight: "bold", color: colors.white, marginBottom: 10 },
+  backButtonText: { color: colors.white, fontWeight: 'bold', marginLeft: 6 },
+  title: { fontSize: 24, fontWeight: 'bold', color: colors.white, marginBottom: 10 },
   calendarWrapper: {
     flex: 1,
     borderRadius: 10,
@@ -121,15 +140,15 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
   },
   fab: {
-    position: "absolute",
+    position: 'absolute',
     bottom: 30,
     right: 20,
     backgroundColor: colors.highlight,
     width: 56,
     height: 56,
     borderRadius: 28,
-    justifyContent: "center",
-    alignItems: "center",
+    justifyContent: 'center',
+    alignItems: 'center',
     elevation: 5,
   },
 });

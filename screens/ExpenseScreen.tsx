@@ -1,10 +1,12 @@
 import DropdownField from "@/components/common/DropdownField";
+import type { RootStackParamList } from "@/navigation/AppNavigator";
 import { useTransactionStore } from "@/store/transactionStore";
 import { expenseCategories } from "@/utils/categories";
 import colors from "@/utils/colors";
-import { useNavigation } from "@react-navigation/native";
+import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import React, { useEffect, useState } from "react";
 import {
+  Alert,
   Keyboard,
   Platform,
   StyleSheet,
@@ -17,41 +19,81 @@ import {
 import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-export default function ExpenseScreen() {
-  const navigation = useNavigation();
+type ExpenseScreenProps = NativeStackScreenProps<RootStackParamList, "Expense">;
+
+function clampToNow(date: Date) {
+  const now = new Date();
+  return date > now ? now : date;
+}
+
+function isSameDay(a: Date, b: Date) {
+  return (
+    a.getDate() === b.getDate() &&
+    a.getMonth() === b.getMonth() &&
+    a.getFullYear() === b.getFullYear()
+  );
+}
+
+export default function ExpenseScreen({ navigation, route }: ExpenseScreenProps) {
   const { addTransaction } = useTransactionStore();
 
+  const initialDate = clampToNow(route.params?.date ? new Date(route.params.date) : new Date());
+  const [entryDate, setEntryDate] = useState<Date>(initialDate);
   const [dateStr, setDateStr] = useState<string>("");
   const [timeStr, setTimeStr] = useState<string>("");
+  const [manualTime, setManualTime] = useState(false);
 
   const [amount, setAmount] = useState<string>("");
   const [category, setCategory] = useState<string>("");
-  const [account, setAccount] = useState<string>("");
-
   const [note, setNote] = useState<string>("");
   const [description, setDescription] = useState<string>("");
-
   const [keypadVisible, setKeypadVisible] = useState(false);
 
-  const accounts = ["Cash", "Wallet", "Bank A", "Card"];
-
   useEffect(() => {
-    const d = new Date();
-    const day = String(d.getDate()).padStart(2, "0");
-    const month = String(d.getMonth() + 1).padStart(2, "0");
-    const year = String(d.getFullYear()).slice(2);
+    const day = String(entryDate.getDate()).padStart(2, "0");
+    const month = String(entryDate.getMonth() + 1).padStart(2, "0");
+    const year = String(entryDate.getFullYear()).slice(2);
     setDateStr(
-      `${day}/${month}/${year} (${d.toLocaleString("en-US", {
+      `${day}/${month}/${year} (${entryDate.toLocaleString("en-US", {
         weekday: "short",
       })})`
     );
 
-    const hours = d.getHours();
-    const minutes = String(d.getMinutes()).padStart(2, "0");
+    const hours = entryDate.getHours();
+    const minutes = String(entryDate.getMinutes()).padStart(2, "0");
     const ampm = hours >= 12 ? "pm" : "am";
     const hour12 = ((hours + 11) % 12) + 1;
     setTimeStr(`${hour12}:${minutes} ${ampm}`);
-  }, []);
+  }, [entryDate]);
+
+  const shiftDate = (days: number) => {
+    setEntryDate((prev) => {
+      const next = new Date(prev);
+      next.setDate(next.getDate() + days);
+      return clampToNow(next);
+    });
+  };
+
+  const shiftTime = (minutes: number) => {
+    setManualTime(true);
+    setEntryDate((prev) => {
+      const next = new Date(prev);
+      next.setMinutes(next.getMinutes() + minutes);
+      return clampToNow(next);
+    });
+  };
+
+  const setTimeToNow = () => {
+    setManualTime(false);
+    setEntryDate((prev) => {
+      const now = new Date();
+      const next = new Date(prev);
+      next.setHours(now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds());
+      return clampToNow(next);
+    });
+  };
+
+  const canMoveToNextDay = !isSameDay(entryDate, new Date());
 
   function onKeyPress(key: string) {
     if (key === "del") {
@@ -94,8 +136,33 @@ export default function ExpenseScreen() {
             <View style={styles.row}>
               <Text style={styles.label}>Date</Text>
               <View style={styles.rowRight}>
+                <TouchableOpacity style={styles.dateShiftButton} onPress={() => shiftDate(-1)}>
+                  <Text style={styles.dateShiftText}>{"<"}</Text>
+                </TouchableOpacity>
                 <Text style={styles.value}>{dateStr}</Text>
-                <Text style={[styles.value, { marginLeft: 8 }]}>{timeStr}</Text>
+                <TouchableOpacity
+                  style={[styles.dateShiftButton, !canMoveToNextDay && styles.disabledButton]}
+                  onPress={() => shiftDate(1)}
+                  disabled={!canMoveToNextDay}
+                >
+                  <Text style={styles.dateShiftText}>{">"}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <View style={styles.row}>
+              <Text style={styles.label}>Time</Text>
+              <View style={styles.rowRight}>
+                <TouchableOpacity style={styles.timeButton} onPress={() => shiftTime(-15)}>
+                  <Text style={styles.timeButtonText}>-15m</Text>
+                </TouchableOpacity>
+                <Text style={styles.value}>{timeStr}</Text>
+                <TouchableOpacity style={styles.timeButton} onPress={() => shiftTime(15)}>
+                  <Text style={styles.timeButtonText}>+15m</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.timeButton} onPress={setTimeToNow}>
+                  <Text style={styles.timeButtonText}>Now</Text>
+                </TouchableOpacity>
               </View>
             </View>
 
@@ -111,9 +178,7 @@ export default function ExpenseScreen() {
                 }}
                 activeOpacity={0.7}
               >
-                <Text style={styles.inputText}>
-                  {amount ? amount : "Tap to enter"}
-                </Text>
+                <Text style={styles.inputText}>{amount ? amount : "Tap to enter"}</Text>
               </TouchableOpacity>
             </View>
 
@@ -123,13 +188,6 @@ export default function ExpenseScreen() {
               options={expenseCategories}
               onSelect={setCategory}
             />
-
-            {/* <DropdownField
-              label="Account"
-              value={account}
-              options={accounts}
-              onSelect={setAccount}
-            /> */}
 
             <View style={styles.field}>
               <Text style={styles.label}>Note</Text>
@@ -158,16 +216,29 @@ export default function ExpenseScreen() {
             </View>
 
             <View style={styles.buttonsRow}>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.saveButton}
                 onPress={async () => {
                   if (!amount || !category) return;
+
+                  const now = new Date();
+                  const txDate = new Date(entryDate);
+
+                  if (!manualTime) {
+                    txDate.setHours(now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds());
+                  }
+
+                  if (txDate > now) {
+                    Alert.alert("Invalid time", "Future date/time transactions are not allowed.");
+                    return;
+                  }
+
                   await addTransaction({
                     amount: parseFloat(amount),
                     description: description || note,
                     category,
                     type: "expense",
-                    date: new Date().toISOString()
+                    date: txDate.toISOString(),
                   });
                   navigation.goBack();
                 }}
@@ -175,10 +246,7 @@ export default function ExpenseScreen() {
                 <Text style={styles.saveText}>Save</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity 
-                style={styles.continueButton}
-                onPress={() => navigation.goBack()}
-              >
+              <TouchableOpacity style={styles.continueButton} onPress={() => navigation.goBack()}>
                 <Text style={styles.continueText}>Back</Text>
               </TouchableOpacity>
             </View>
@@ -189,7 +257,7 @@ export default function ExpenseScreen() {
               <View style={styles.keypadTopBar}>
                 <Text style={styles.keypadLabel}>Amount</Text>
                 <TouchableOpacity onPress={() => setKeypadVisible(false)}>
-                  <Text style={styles.keypadLabel}>✕</Text>
+                  <Text style={styles.keypadLabel}>X</Text>
                 </TouchableOpacity>
               </View>
 
@@ -204,31 +272,16 @@ export default function ExpenseScreen() {
                     {row.map((k) => (
                       <TouchableOpacity
                         key={k}
-                        style={[
-                          styles.keyCell,
-                          k === "done" ? styles.doneCell : null,
-                        ]}
+                        style={[styles.keyCell, k === "done" ? styles.doneCell : null]}
                         onPress={() => {
                           if (k === "del") onKeyPress("del");
                           else if (k === "done") onKeyPress("done");
-                          else if (k === "-" || k === "calc" || k === " ")
-                            return;
+                          else if (k === "-" || k === "calc" || k === " ") return;
                           else onKeyPress(k);
                         }}
                       >
-                        <Text
-                          style={[
-                            styles.keyText,
-                            k === "done" ? styles.doneText : null,
-                          ]}
-                        >
-                          {k === "del"
-                            ? "⌫"
-                            : k === "calc"
-                            ? "🧮"
-                            : k === " "
-                            ? ""
-                            : k}
+                        <Text style={[styles.keyText, k === "done" ? styles.doneText : null]}>
+                          {k === "del" ? "DEL" : k === "calc" ? "CALC" : k === " " ? "" : k}
                         </Text>
                       </TouchableOpacity>
                     ))}
@@ -266,6 +319,25 @@ const styles = StyleSheet.create({
   rowRight: { flexDirection: "row", alignItems: "center" },
   label: { color: colors.light, marginBottom: 4, fontSize: 14 },
   value: { color: colors.white, fontSize: 14 },
+  dateShiftButton: {
+    borderWidth: 1,
+    borderColor: colors.surface,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    marginHorizontal: 8,
+  },
+  disabledButton: { opacity: 0.4 },
+  dateShiftText: { color: colors.white, fontSize: 14, fontWeight: "700" },
+  timeButton: {
+    borderWidth: 1,
+    borderColor: colors.surface,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    marginLeft: 8,
+  },
+  timeButtonText: { color: colors.white, fontSize: 12, fontWeight: "600" },
 
   hr: { height: 1, backgroundColor: colors.surface, marginVertical: 8 },
 
