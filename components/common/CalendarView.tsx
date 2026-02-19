@@ -1,7 +1,7 @@
 import type { Transaction } from '@/types/transaction';
 import colors from '@/utils/colors';
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { Calendar, DateData } from 'react-native-calendars';
 
 type CalendarViewProps = {
