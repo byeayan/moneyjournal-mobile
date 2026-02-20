@@ -22,6 +22,10 @@ const TIMEFRAME_OPTIONS: { label: string; value: Timeframe }[] = [
   { label: 'Quarterly', value: 'quarterly' },
   { label: 'Yearly', value: 'yearly' },
 ];
+const MUTED_INCOME = '#B89CFF';
+const MUTED_EXPENSE = '#8D71D7';
+const MUTED_PRIMARY = '#A783F4';
+const MUTED_PRIMARY_FILL = 'rgba(167, 131, 244, 0.22)';
 
 function normalizeTransaction(raw: any): Transaction {
   return {
@@ -58,6 +62,15 @@ function formatCurrency(value: number) {
 
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
+}
+
+function normalizeCategoryLabel(value: unknown) {
+  if (typeof value !== 'string') return 'Other';
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.toLowerCase() === 'undefined' || trimmed.toLowerCase() === 'null') {
+    return 'Other';
+  }
+  return trimmed;
 }
 
 function toDateKey(date: Date) {
@@ -105,8 +118,8 @@ function buildIncomeExpenseByPeriod(transactions: Transaction[], timeframe: Time
     return {
       labels,
       datasets: [
-        { label: 'Income', data: income, backgroundColor: colors.income },
-        { label: 'Expense', data: expense, backgroundColor: colors.expense },
+        { label: 'Income', data: income, backgroundColor: MUTED_INCOME },
+        { label: 'Expense', data: expense, backgroundColor: MUTED_EXPENSE },
       ],
     };
   }
@@ -123,8 +136,8 @@ function buildIncomeExpenseByPeriod(transactions: Transaction[], timeframe: Time
   return {
     labels,
     datasets: [
-      { label: 'Income', data: labels.map((label) => bucketMap[label].income), backgroundColor: colors.income },
-      { label: 'Expense', data: labels.map((label) => bucketMap[label].expense), backgroundColor: colors.expense },
+      { label: 'Income', data: labels.map((label) => bucketMap[label].income), backgroundColor: MUTED_INCOME },
+      { label: 'Expense', data: labels.map((label) => bucketMap[label].expense), backgroundColor: MUTED_EXPENSE },
     ],
   };
 }
@@ -134,7 +147,8 @@ function buildTopSpendingCategories(transactions: Transaction[]) {
   transactions
     .filter((transaction) => transaction.type === 'expense')
     .forEach((transaction) => {
-      categoryMap[transaction.category] = (categoryMap[transaction.category] ?? 0) + transaction.amount;
+      const category = normalizeCategoryLabel(transaction.category);
+      categoryMap[category] = (categoryMap[category] ?? 0) + transaction.amount;
     });
   const top = Object.entries(categoryMap)
     .map(([label, value]) => ({ label, value }))
@@ -146,7 +160,7 @@ function buildTopSpendingCategories(transactions: Transaction[]) {
     datasets: [
       {
         data: top.map((x) => x.value),
-        backgroundColor: ['#654EB0', '#564787', '#7E6CC4', '#9F90D8', '#B9AFE8'],
+        backgroundColor: ['#C9AEFF', '#B89CFF', '#A783F4', '#9570E5', '#845ED2'],
       },
     ],
   };
@@ -170,8 +184,8 @@ function buildExpenseTrendByPeriod(transactions: Transaction[], timeframe: Timef
         {
           label: 'Weekly Expense',
           data: values,
-          borderColor: colors.primary,
-          backgroundColor: 'rgba(101, 78, 176, 0.3)',
+          borderColor: MUTED_PRIMARY,
+          backgroundColor: MUTED_PRIMARY_FILL,
           tension: 0.3,
           fill: true,
         },
@@ -194,8 +208,8 @@ function buildExpenseTrendByPeriod(transactions: Transaction[], timeframe: Timef
       {
         label: `${timeframe[0].toUpperCase()}${timeframe.slice(1)} Expense`,
         data: labels.map((label) => bucketMap[label]),
-        borderColor: colors.primary,
-        backgroundColor: 'rgba(101, 78, 176, 0.3)',
+        borderColor: MUTED_PRIMARY,
+        backgroundColor: MUTED_PRIMARY_FILL,
         tension: 0.3,
         fill: true,
       },
@@ -359,9 +373,9 @@ export default function AnalyticsScreen() {
     () => ({
       labels: ['Current', 'Simulated'],
       datasets: [
-        { label: 'Income', data: [baseline.income, simulated.income], backgroundColor: colors.income },
-        { label: 'Expense', data: [baseline.expense, simulated.expense], backgroundColor: colors.expense },
-        { label: 'Net', data: [currentNet, simulated.net], backgroundColor: colors.primary },
+        { label: 'Income', data: [baseline.income, simulated.income], backgroundColor: MUTED_INCOME },
+        { label: 'Expense', data: [baseline.expense, simulated.expense], backgroundColor: MUTED_EXPENSE },
+        { label: 'Net', data: [currentNet, simulated.net], backgroundColor: MUTED_PRIMARY },
       ],
     }),
     [baseline.income, baseline.expense, simulated.income, simulated.expense, simulated.net, currentNet]
@@ -556,7 +570,14 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   stateText: { color: colors.light, fontSize: 14 },
-  chartCard: { backgroundColor: colors.surface, borderRadius: 12, padding: 12, marginBottom: 14 },
+  chartCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(204, 198, 225, 0.14)',
+  },
   chartHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
   chartTitle: { color: colors.white, fontSize: 16, fontWeight: '700', flexShrink: 1, paddingRight: 8 },
   weekNav: { flexDirection: 'row', alignItems: 'center', gap: 6, marginLeft: 8, flexShrink: 0 },
@@ -566,7 +587,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.primary,
+    backgroundColor: 'rgba(101, 78, 176, 0.35)',
   },
   weekNavDisabled: { opacity: 0.35 },
   weekNavText: { color: colors.white, fontWeight: '700', fontSize: 14 },
@@ -592,7 +613,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.primary,
+    backgroundColor: 'rgba(101, 78, 176, 0.38)',
   },
   controlButtonText: { color: colors.white, fontSize: 20, fontWeight: '700', lineHeight: 22 },
 });

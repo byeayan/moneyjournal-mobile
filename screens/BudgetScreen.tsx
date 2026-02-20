@@ -255,10 +255,6 @@ export default function BudgetScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.root}>
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-          <View style={styles.headerRow}>
-            <Text style={styles.title}>Budget</Text>
-          </View>
-
           <View style={styles.monthRow}>
             <TouchableOpacity style={styles.monthButton} onPress={() => handleShiftMonth(-1)}>
               <Ionicons name="chevron-back" size={16} color={colors.white} />
@@ -472,19 +468,8 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingHorizontal: 18,
-    paddingTop: 6,
+    paddingTop: 12,
     paddingBottom: 96,
-  },
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'flex-start',
-    marginBottom: 10,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: colors.white,
   },
   monthRow: {
     flexDirection: 'row',
