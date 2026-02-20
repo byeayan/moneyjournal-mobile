@@ -4,7 +4,6 @@ import { useNavigation } from "@react-navigation/native";
 import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Modal,
   ScrollView,
   StyleSheet,
@@ -43,6 +42,21 @@ export default function ProfileScreen() {
   const [gender, setGender] = useState<Gender>("prefer_not_to_say");
   const [loading, setLoading] = useState(false);
   const [showDobPicker, setShowDobPicker] = useState(false);
+  const [showGenderPicker, setShowGenderPicker] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [feedbackModal, setFeedbackModal] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+  }>({
+    visible: false,
+    title: "",
+    message: "",
+  });
+
+  const showFeedback = (title: string, message: string) => {
+    setFeedbackModal({ visible: true, title, message });
+  };
 
   const resetToAuth = () => {
     const parent = navigation.getParent();
@@ -60,7 +74,7 @@ export default function ProfileScreen() {
         await fetchCurrentUser();
       } catch (error) {
         const message = error instanceof Error ? error.message : "Failed to load profile";
-        Alert.alert("Error", message);
+        showFeedback("Error", message);
       } finally {
         setLoading(false);
       }
@@ -97,23 +111,17 @@ export default function ProfileScreen() {
   }, [username, dob, phone, gender, initial]);
 
   const selectGender = () => {
-    Alert.alert("Select Gender", "Choose one", [
-      { text: "Male", onPress: () => setGender("male") },
-      { text: "Female", onPress: () => setGender("female") },
-      { text: "Other", onPress: () => setGender("other") },
-      { text: "Prefer Not", onPress: () => setGender("prefer_not_to_say") },
-      { text: "Cancel", style: "cancel" },
-    ]);
+    setShowGenderPicker(true);
   };
 
   const onSave = async () => {
     if (!username.trim()) {
-      Alert.alert("Validation", "Username is required.");
+      showFeedback("Validation", "Username is required.");
       return;
     }
 
     if (phone && phone.length !== 10) {
-      Alert.alert("Validation", "Phone number must be exactly 10 digits.");
+      showFeedback("Validation", "Phone number must be exactly 10 digits.");
       return;
     }
 
@@ -125,39 +133,17 @@ export default function ProfileScreen() {
         gender,
         dob: dob.trim(),
       });
-      Alert.alert("Success", "Profile updated.");
+      showFeedback("Success", "Profile updated.");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Update failed";
-      Alert.alert("Error", message);
+      showFeedback("Error", message);
     } finally {
       setLoading(false);
     }
   };
 
   const onDeleteAccount = () => {
-    Alert.alert(
-      "Delete Account",
-      "This will permanently delete your account and all transactions. Continue?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              setLoading(true);
-              await deleteCurrentUser();
-              resetToAuth();
-            } catch (error) {
-              const message = error instanceof Error ? error.message : "Delete failed";
-              Alert.alert("Error", message);
-            } finally {
-              setLoading(false);
-            }
-          },
-        },
-      ]
-    );
+    setShowDeleteConfirm(true);
   };
 
   return (
@@ -256,6 +242,85 @@ export default function ProfileScreen() {
                   textSectionTitleColor: colors.light,
                 }}
               />
+            </View>
+          </View>
+        </Modal>
+
+        <Modal visible={showGenderPicker} transparent animationType="fade" onRequestClose={() => setShowGenderPicker(false)}>
+          <View style={styles.centerBackdrop}>
+            <View style={styles.centerModalCard}>
+              <Text style={styles.centerModalTitle}>Select Gender</Text>
+
+              <TouchableOpacity style={styles.optionRow} onPress={() => { setGender("male"); setShowGenderPicker(false); }}>
+                <Text style={styles.optionText}>Male</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.optionRow} onPress={() => { setGender("female"); setShowGenderPicker(false); }}>
+                <Text style={styles.optionText}>Female</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.optionRow} onPress={() => { setGender("other"); setShowGenderPicker(false); }}>
+                <Text style={styles.optionText}>Other</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.optionRow} onPress={() => { setGender("prefer_not_to_say"); setShowGenderPicker(false); }}>
+                <Text style={styles.optionText}>Prefer Not</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.modalSecondaryBtn} onPress={() => setShowGenderPicker(false)}>
+                <Text style={styles.modalSecondaryBtnText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+
+        <Modal visible={showDeleteConfirm} transparent animationType="fade" onRequestClose={() => setShowDeleteConfirm(false)}>
+          <View style={styles.centerBackdrop}>
+            <View style={styles.centerModalCard}>
+              <Text style={styles.centerModalTitle}>Delete Account</Text>
+              <Text style={styles.centerModalMessage}>
+                This will permanently delete your account and all transactions. Continue?
+              </Text>
+              <View style={styles.modalBtnRow}>
+                <TouchableOpacity style={styles.modalSecondaryBtn} onPress={() => setShowDeleteConfirm(false)}>
+                  <Text style={styles.modalSecondaryBtnText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.modalDangerBtn}
+                  onPress={async () => {
+                    try {
+                      setShowDeleteConfirm(false);
+                      setLoading(true);
+                      await deleteCurrentUser();
+                      resetToAuth();
+                    } catch (error) {
+                      const message = error instanceof Error ? error.message : "Delete failed";
+                      showFeedback("Error", message);
+                    } finally {
+                      setLoading(false);
+                    }
+                  }}
+                >
+                  <Text style={styles.modalDangerBtnText}>Delete</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        <Modal
+          visible={feedbackModal.visible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setFeedbackModal((prev) => ({ ...prev, visible: false }))}
+        >
+          <View style={styles.centerBackdrop}>
+            <View style={styles.centerModalCard}>
+              <Text style={styles.centerModalTitle}>{feedbackModal.title}</Text>
+              <Text style={styles.centerModalMessage}>{feedbackModal.message}</Text>
+              <TouchableOpacity
+                style={styles.modalPrimaryBtn}
+                onPress={() => setFeedbackModal((prev) => ({ ...prev, visible: false }))}
+              >
+                <Text style={styles.modalPrimaryBtnText}>OK</Text>
+              </TouchableOpacity>
             </View>
           </View>
         </Modal>
@@ -389,6 +454,79 @@ const styles = StyleSheet.create({
   },
   modalClose: {
     color: colors.primary,
+    fontWeight: "700",
+  },
+  centerBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    justifyContent: "center",
+    paddingHorizontal: 18,
+  },
+  centerModalCard: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.highlight,
+    borderRadius: 12,
+    padding: 14,
+  },
+  centerModalTitle: {
+    color: colors.white,
+    fontSize: 18,
+    fontWeight: "700",
+    marginBottom: 8,
+  },
+  centerModalMessage: {
+    color: colors.light,
+    fontSize: 14,
+    marginBottom: 12,
+  },
+  optionRow: {
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.highlight,
+  },
+  optionText: {
+    color: colors.white,
+    fontSize: 15,
+  },
+  modalBtnRow: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: 8,
+    marginTop: 6,
+  },
+  modalPrimaryBtn: {
+    alignSelf: "flex-end",
+    backgroundColor: colors.primary,
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  modalPrimaryBtnText: {
+    color: colors.white,
+    fontWeight: "700",
+  },
+  modalSecondaryBtn: {
+    alignSelf: "flex-end",
+    borderWidth: 1,
+    borderColor: colors.light,
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    marginTop: 10,
+  },
+  modalSecondaryBtnText: {
+    color: colors.light,
+    fontWeight: "700",
+  },
+  modalDangerBtn: {
+    backgroundColor: "#8b1e2f",
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  modalDangerBtnText: {
+    color: colors.white,
     fontWeight: "700",
   },
 });

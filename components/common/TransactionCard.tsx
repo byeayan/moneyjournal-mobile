@@ -9,11 +9,11 @@ type TransactionCardProps = {
 
 function formatAmount(amount: number, type: Transaction["type"]) {
   const prefix = type === "income" ? "+" : "-";
-  const value = Number(amount || 0).toLocaleString("en-US", {
+  const value = Number(amount || 0).toLocaleString("en-IN", {
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   });
-  return `${prefix}$${value}`;
+  return `${prefix}₹${value}`;
 }
 
 export default function TransactionCard({ transaction }: TransactionCardProps) {

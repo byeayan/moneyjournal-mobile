@@ -60,6 +60,10 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
   setTransactions: (transactions: Transaction[]) => set({ transactions }),
   addTransaction: async (transaction) => {
     try {
+      if (!transaction.note || !transaction.note.trim()) {
+        throw new Error('Note is required.');
+      }
+
       const token = useAuthStore.getState().authToken;
       if (!token) {
         throw new Error('Authentication token is missing. Please log in.');

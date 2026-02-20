@@ -21,7 +21,7 @@ function isSameDay(a: Date, b: Date) {
 }
 
 function formatCurrency(value: number) {
-  return value.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+  return value.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 }
 
 function toLocalDateKey(date: Date) {
@@ -214,10 +214,10 @@ export default function FullCalendarScreen({ route }: FullCalendarScreenProps) {
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Selected Day Summary</Text>
           <Text style={styles.cardText}>Transactions: {selectedSummary.count}</Text>
-          <Text style={[styles.cardText, { color: colors.income }]}>Income: +${formatCurrency(selectedSummary.income)}</Text>
-          <Text style={[styles.cardText, { color: colors.expense }]}>Expense: -${formatCurrency(selectedSummary.expense)}</Text>
+          <Text style={[styles.cardText, { color: colors.income }]}>Income: +₹{formatCurrency(selectedSummary.income)}</Text>
+          <Text style={[styles.cardText, { color: colors.expense }]}>Expense: -₹{formatCurrency(selectedSummary.expense)}</Text>
           <Text style={[styles.cardText, styles.netText]}>
-            Net: {selectedSummary.net >= 0 ? '+' : '-'}${formatCurrency(Math.abs(selectedSummary.net))}
+            Net: {selectedSummary.net >= 0 ? '+₹' : '-₹'}{formatCurrency(Math.abs(selectedSummary.net))}
           </Text>
           <TouchableOpacity style={styles.linkButton} onPress={openDayTransactions}>
             <Text style={styles.linkButtonText}>View Day Transactions</Text>
@@ -239,7 +239,7 @@ export default function FullCalendarScreen({ route }: FullCalendarScreenProps) {
                 >
                   <Text style={styles.chipTitle}>{chip.category}</Text>
                   <Text style={[styles.chipValue, { color: chip.net >= 0 ? colors.income : colors.expense }]}>
-                    {chip.net >= 0 ? '+' : '-'}${formatCurrency(Math.abs(chip.net))}
+                    {chip.net >= 0 ? '+₹' : '-₹'}{formatCurrency(Math.abs(chip.net))}
                   </Text>
                 </TouchableOpacity>
               ))}
@@ -251,7 +251,7 @@ export default function FullCalendarScreen({ route }: FullCalendarScreenProps) {
           <Text style={styles.cardTitle}>Monthly Insight</Text>
           {monthlyInsight ? (
             <Text style={styles.cardText}>
-              Highest spend category this month: {monthlyInsight.category} (${formatCurrency(monthlyInsight.amount)})
+              Highest spend category this month: {monthlyInsight.category} (₹{formatCurrency(monthlyInsight.amount)})
             </Text>
           ) : (
             <Text style={styles.cardMuted}>No expense insight available for this month.</Text>

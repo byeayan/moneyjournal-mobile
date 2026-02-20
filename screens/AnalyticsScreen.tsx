@@ -50,7 +50,7 @@ function dedupeTransactions(items: Transaction[]) {
 }
 
 function formatCurrency(value: number) {
-  return value.toLocaleString('en-US', {
+  return value.toLocaleString('en-IN', {
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   });
@@ -457,12 +457,12 @@ export default function AnalyticsScreen() {
                 </TouchableOpacity>
               </View>
 
-              <Text style={styles.metricText}>Current Net: ${formatCurrency(currentNet)}</Text>
+              <Text style={styles.metricText}>Current Net: ₹{formatCurrency(currentNet)}</Text>
               <Text style={[styles.metricText, { color: simulated.net >= currentNet ? colors.income : colors.expense }]}>
-                Simulated Net: ${formatCurrency(simulated.net)}
+                Simulated Net: ₹{formatCurrency(simulated.net)}
               </Text>
               <Text style={styles.metricDelta}>
-                Change: {simulated.net - currentNet >= 0 ? '+' : '-'}${formatCurrency(Math.abs(simulated.net - currentNet))}
+                Change: {simulated.net - currentNet >= 0 ? '+₹' : '-₹'}{formatCurrency(Math.abs(simulated.net - currentNet))}
               </Text>
 
               <View style={styles.controlBlock}>

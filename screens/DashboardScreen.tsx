@@ -4,6 +4,7 @@ import { useAuthStore } from "@/store/authStore";
 import { useTransactionStore } from "@/store/transactionStore";
 import colors from "@/utils/colors";
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import { useNavigation } from "@react-navigation/native";
 import { useEffect, useMemo, useState } from "react";
 import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
@@ -11,7 +12,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 function formatCurrency(value: number | undefined) {
   const amount = Number(value ?? 0);
-  return amount.toLocaleString("en-US", {
+  return amount.toLocaleString("en-IN", {
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   });
@@ -77,6 +78,7 @@ export default function DashboardScreen() {
       ),
     [calendarTransactions]
   );
+  const netBalance = monthlyIncome - monthlyExpense;
 
   const handleMaximizeCalendar = () => {
     navigation.navigate("FullCalendar", {
@@ -89,35 +91,56 @@ export default function DashboardScreen() {
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <ScrollView style={styles.container} contentContainerStyle={{ paddingTop: 10, paddingBottom: 50 }}>
         <View style={styles.topHeader}>
-          <Text style={styles.title}>{`Welcome, ${displayName}`}</Text>
+          <Text style={styles.welcomeLabel}>Welcome,</Text>
+          <Text style={styles.title}>{displayName}</Text>
         </View>
 
-        <View style={styles.buttonContainer}>
-          <TouchableOpacity
-            style={[styles.actionButton, { backgroundColor: colors.primary }]}
-            onPress={() => navigation.navigate("Income", { date: selectedDate.toISOString() })}
-          >
-            <Text style={styles.buttonText}>+ Income</Text>
-          </TouchableOpacity>
+        <LinearGradient colors={[colors.primary, colors.highlight]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.summaryHero}>
+          <Text style={styles.summaryHeroLabel}>This Month</Text>
+          <Text style={styles.summaryHeroValue}>
+            {netBalance >= 0 ? "+₹" : "-₹"}
+            {formatCurrency(Math.abs(netBalance))}
+          </Text>
+          <View style={styles.summaryMetaRow}>
+            <Text style={styles.summaryMetaText}>In: ₹{formatCurrency(monthlyIncome)}</Text>
+            <Text style={styles.summaryMetaText}>Out: ₹{formatCurrency(monthlyExpense)}</Text>
+          </View>
+        </LinearGradient>
+
+        <View style={styles.actionsPanel}>
+          <View style={styles.buttonContainer}>
+            <TouchableOpacity
+              style={[styles.actionButton, { backgroundColor: colors.primary }]}
+              onPress={() => navigation.navigate("Income", { date: selectedDate.toISOString() })}
+            >
+              <Ionicons name="trending-up-outline" size={18} color={colors.white} />
+              <Text style={styles.actionButtonText}>Income</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.actionButton, { backgroundColor: colors.primary }]}
+              onPress={() => navigation.navigate("Expense", { date: selectedDate.toISOString() })}
+            >
+              <Ionicons name="trending-down-outline" size={18} color={colors.white} />
+              <Text style={styles.actionButtonText}>Expense</Text>
+            </TouchableOpacity>
+          </View>
 
           <TouchableOpacity
-            style={[styles.actionButton, { backgroundColor: colors.primary }]}
-            onPress={() => navigation.navigate("Expense", { date: selectedDate.toISOString() })}
+            style={styles.analyticsButton}
+            onPress={() => navigation.navigate("Analytics")}
           >
-            <Text style={styles.buttonText}>+ Expense</Text>
+            <Ionicons name="bar-chart-outline" size={16} color={colors.light} />
+            <Text style={styles.analyticsButtonText}>View Analytics</Text>
           </TouchableOpacity>
         </View>
-
-        <TouchableOpacity
-          style={[styles.analyticsButton, { backgroundColor: colors.highlight }]}
-          onPress={() => navigation.navigate("Analytics")}
-        >
-          <Text style={styles.buttonText}>View Analytics</Text>
-        </TouchableOpacity>
 
         <View style={styles.calendarContainer}>
           <View style={styles.calendarHeader}>
-            <Text style={styles.sectionTitle}>Calendar</Text>
+            <View style={styles.sectionTitleRow}>
+              <Ionicons name="calendar-outline" size={18} color={colors.light} />
+              <Text style={styles.sectionTitle}>Calendar</Text>
+            </View>
             <TouchableOpacity style={styles.iconCircle} onPress={handleMaximizeCalendar}>
               <Ionicons name="arrow-up-outline" size={20} color={colors.white} />
             </TouchableOpacity>
@@ -142,17 +165,20 @@ export default function DashboardScreen() {
         <View style={styles.monthlyTotals}>
           <View style={styles.totalCard}>
             <Text style={styles.totalLabel}>Monthly Income</Text>
-            <Text style={[styles.totalValue, styles.incomeValue]}>+${formatCurrency(monthlyIncome)}</Text>
+            <Text style={[styles.totalValue, styles.incomeValue]}>+₹{formatCurrency(monthlyIncome)}</Text>
           </View>
           <View style={styles.totalCard}>
             <Text style={styles.totalLabel}>Monthly Expense</Text>
-            <Text style={[styles.totalValue, styles.expenseValue]}>-${formatCurrency(monthlyExpense)}</Text>
+            <Text style={[styles.totalValue, styles.expenseValue]}>-₹{formatCurrency(monthlyExpense)}</Text>
           </View>
         </View>
 
         <View style={styles.transactionsContainer}>
           <View style={styles.transactionsHeader}>
-            <Text style={styles.sectionTitle}>Recent Transactions</Text>
+            <View style={styles.sectionTitleRow}>
+              <Ionicons name="time-outline" size={18} color={colors.light} />
+              <Text style={styles.sectionTitle}>Recent Transactions</Text>
+            </View>
             <TouchableOpacity
               style={styles.viewAllToggle}
               onPress={() => setShowAllRecent((prev) => !prev)}
@@ -186,21 +212,60 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   topHeader: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: "column",
+    alignItems: "flex-start",
     marginBottom: 16,
   },
+  welcomeLabel: {
+    color: colors.light,
+    fontSize: 14,
+    fontWeight: "600",
+    marginBottom: 2,
+  },
   title: {
-    fontSize: 28,
+    fontSize: 30,
     color: colors.white,
     fontWeight: "bold",
-    flex: 1,
-    marginRight: 10,
+  },
+  summaryHero: {
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    marginBottom: 12,
+  },
+  summaryHeroLabel: {
+    color: colors.light,
+    fontSize: 12,
+    fontWeight: "700",
+    marginBottom: 2,
+  },
+  summaryHeroValue: {
+    color: colors.white,
+    fontSize: 26,
+    fontWeight: "800",
+  },
+  summaryMetaRow: {
+    marginTop: 8,
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  summaryMetaText: {
+    color: colors.white,
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  actionsPanel: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.highlight,
+    borderRadius: 14,
+    padding: 10,
+    marginBottom: 16,
   },
   buttonContainer: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 12,
+    marginBottom: 10,
   },
   actionButton: {
     flex: 0.48,
@@ -208,21 +273,41 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     justifyContent: "center",
     alignItems: "center",
+    flexDirection: "row",
+    gap: 8,
   },
-  buttonText: { color: colors.white, fontSize: 18, fontWeight: "bold" },
+  actionButtonText: { color: colors.white, fontSize: 16, fontWeight: "700" },
   analyticsButton: {
-    height: 50,
+    height: 44,
     borderRadius: 10,
     justifyContent: "center",
     alignItems: "center",
-    marginBottom: 24,
+    borderWidth: 1.8,
+    borderColor: colors.primary,
+    backgroundColor: "#2b3559",
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 0,
   },
-  calendarContainer: { marginBottom: 10 },
+  analyticsButtonText: { color: colors.white, fontSize: 15, fontWeight: "700" },
+  calendarContainer: {
+    marginBottom: 10,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.highlight,
+    borderRadius: 14,
+    padding: 10,
+  },
   calendarHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: 10,
+  },
+  sectionTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
   },
   iconCircle: {
     backgroundColor: colors.primary,

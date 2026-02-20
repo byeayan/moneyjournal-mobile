@@ -34,10 +34,33 @@ function isSameDay(a: Date, b: Date) {
   );
 }
 
+function hasNoExplicitTime(date: Date) {
+  return (
+    date.getHours() === 0 &&
+    date.getMinutes() === 0 &&
+    date.getSeconds() === 0 &&
+    date.getMilliseconds() === 0
+  );
+}
+
+function resolveInitialEntryDate(rawDate?: string) {
+  const now = new Date();
+  if (!rawDate) return now;
+
+  const parsed = new Date(rawDate);
+  if (Number.isNaN(parsed.getTime())) return now;
+
+  if (isSameDay(parsed, now) && hasNoExplicitTime(parsed)) {
+    parsed.setHours(now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds());
+  }
+
+  return clampToNow(parsed);
+}
+
 export default function IncomeScreen({ navigation, route }: IncomeScreenProps) {
   const { addTransaction } = useTransactionStore();
 
-  const initialDate = clampToNow(route.params?.date ? new Date(route.params.date) : new Date());
+  const initialDate = resolveInitialEntryDate(route.params?.date);
   const [entryDate, setEntryDate] = useState<Date>(initialDate);
   const [dateStr, setDateStr] = useState<string>("");
   const [timeStr, setTimeStr] = useState<string>("");
@@ -220,11 +243,15 @@ export default function IncomeScreen({ navigation, route }: IncomeScreenProps) {
                 style={styles.saveButton}
                 onPress={async () => {
                   if (!amount || !category) return;
+                  if (!note.trim()) {
+                    Alert.alert("Validation", "Note is required.");
+                    return;
+                  }
 
                   const now = new Date();
                   const txDate = new Date(entryDate);
 
-                  if (!manualTime) {
+                  if (!manualTime && isSameDay(txDate, now)) {
                     txDate.setHours(now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds());
                   }
 

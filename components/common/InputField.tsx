@@ -1,4 +1,5 @@
 import colors from "@/utils/colors";
+import theme from "@/utils/theme";
 import React from "react";
 import {
   StyleSheet,
@@ -27,20 +28,22 @@ export default function InputField({ label, style, ...props }: InputFieldProps) 
 
 const styles = StyleSheet.create({
   field: {
-    marginTop: 12,
+    marginTop: theme.spacing.sm,
   },
   label: {
     color: colors.light,
-    marginBottom: 6,
-    fontSize: 14,
+    marginBottom: theme.spacing.xs,
+    fontSize: theme.typography.small,
+    fontWeight: "600",
   },
   input: {
-    height: 48,
+    height: theme.controls.inputHeight,
     borderWidth: 1,
     borderColor: colors.highlight,
-    borderRadius: 10,
-    paddingHorizontal: 12,
+    borderRadius: theme.radius.md,
+    paddingHorizontal: theme.spacing.sm,
     color: colors.white,
-    fontSize: 16,
+    fontSize: theme.typography.body,
+    backgroundColor: colors.surface,
   },
 });
