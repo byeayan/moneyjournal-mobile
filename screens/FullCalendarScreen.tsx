@@ -4,7 +4,7 @@ import type { Transaction } from '@/types/transaction';
 import colors from '@/utils/colors';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
-import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import type { NativeStackNavigationProp, NativeStackScreenProps } from '@react-navigation/native-stack';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -36,7 +36,7 @@ function parseLocalDateString(dateString: string) {
 }
 
 export default function FullCalendarScreen({ route }: FullCalendarScreenProps) {
-  const navigation = useNavigation<any>();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { fetchTransactionsByMonth, calendarTransactions } = useTransactionStore();
 
   const initialDate = route.params?.selectedDate ? new Date(route.params.selectedDate) : new Date();

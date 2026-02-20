@@ -1,8 +1,10 @@
 import InputField from "@/components/common/InputField";
+import type { RootStackParamList } from "@/navigation/AppNavigator";
 import { useAuthStore } from "@/store/authStore";
 import colors from "@/utils/colors";
 import theme from "@/utils/theme";
 import { useNavigation } from "@react-navigation/native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import React, { useState } from "react";
 import {
   ActivityIndicator,
@@ -19,7 +21,7 @@ export default function LoginScreen() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [feedback, setFeedback] = useState<{ title: string; message: string } | null>(null);
-  const navigation = useNavigation<any>();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList, "Login">>();
   const { login } = useAuthStore();
 
   const handleLogin = async () => {

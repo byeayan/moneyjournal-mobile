@@ -6,17 +6,27 @@ const AUTH_TOKEN_KEY = 'auth_token';
 const AUTH_USER_KEY = 'auth_user';
 
 function parseUserFromToken(token: string) {
+  const parsed = parseTokenPayload(token);
+  return parsed?.user ?? null;
+}
+
+function parseTokenPayload(token: string): any {
   try {
     const payload = token.split('.')[1];
     if (!payload) return null;
     const normalized = payload.replace(/-/g, '+').replace(/_/g, '/');
     const padded = normalized + '='.repeat((4 - (normalized.length % 4)) % 4);
     const decoded = atob(padded);
-    const parsed = JSON.parse(decoded);
-    return parsed?.user ?? null;
+    return JSON.parse(decoded);
   } catch {
     return null;
   }
+}
+
+function isTokenExpired(token: string) {
+  const payload = parseTokenPayload(token);
+  if (!payload?.exp || typeof payload.exp !== 'number') return false;
+  return Date.now() >= payload.exp * 1000;
 }
 
 async function persistAuth(token: string, user: any) {
@@ -75,6 +85,7 @@ interface AuthState {
   logout: () => void;
   signup: (username: string, email: string, password: string) => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
+  requireValidToken: () => Promise<string>;
   fetchCurrentUser: () => Promise<void>;
   updateCurrentUser: (payload: ProfileUpdatePayload) => Promise<void>;
   deleteCurrentUser: () => Promise<void>;
@@ -94,6 +105,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
       if (!token) {
         set({ isHydrated: true });
+        return;
+      }
+
+      if (isTokenExpired(token)) {
+        await clearPersistedAuth();
+        set({ authToken: null, user: null, isLoggedIn: false, isHydrated: true });
         return;
       }
 
@@ -125,8 +142,21 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   logout: () => {
-    set({ authToken: null, user: null, isLoggedIn: false });
-    void clearPersistedAuth();
+      set({ authToken: null, user: null, isLoggedIn: false });
+      void clearPersistedAuth();
+  },
+
+  requireValidToken: async () => {
+    const token = get().authToken;
+    if (!token) throw new Error('No auth token found');
+
+    if (isTokenExpired(token)) {
+      set({ authToken: null, user: null, isLoggedIn: false });
+      await clearPersistedAuth();
+      throw new Error('Session expired. Please log in again.');
+    }
+
+    return token;
   },
 
   signup: async (username: string, email: string, password: string) => {
@@ -194,8 +224,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   fetchCurrentUser: async () => {
-    const token = get().authToken;
-    if (!token) throw new Error('No auth token found');
+    const token = await get().requireValidToken();
 
     const response = await fetch(`${API_BASE_URL}/users/current`, {
       method: 'GET',
@@ -216,8 +245,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   updateCurrentUser: async (payload) => {
-    const token = get().authToken;
-    if (!token) throw new Error('No auth token found');
+    const token = await get().requireValidToken();
 
     const response = await fetch(`${API_BASE_URL}/users/current`, {
       method: 'PUT',
@@ -239,8 +267,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   deleteCurrentUser: async () => {
-    const token = get().authToken;
-    if (!token) throw new Error('No auth token found');
+    const token = await get().requireValidToken();
 
     const response = await fetch(`${API_BASE_URL}/users/current`, {
       method: 'DELETE',

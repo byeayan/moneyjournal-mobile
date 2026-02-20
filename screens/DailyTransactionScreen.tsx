@@ -1,11 +1,13 @@
 import DropdownField from '@/components/common/DropdownField';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
+import type { RootStackParamList } from '@/navigation/AppNavigator';
 import { useTransactionStore } from '@/store/transactionStore';
 import type { Transaction } from '@/types/transaction';
 import { expenseCategories, incomeCategories } from '@/utils/categories';
 import colors from '@/utils/colors';
 import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import React, { useMemo, useState } from 'react';
 import {
   Alert,
@@ -40,7 +42,7 @@ function formatAmount(value: number) {
 }
 
 export default function DailyTransactionScreen({ route }: DailyTransactionScreenProps) {
-  const navigation = useNavigation<any>();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList, 'DailyTransaction'>>();
   const { updateTransaction, deleteTransaction } = useTransactionStore();
   const { date: dateString, transactions, showAll = false, title } = route.params;
   const date = new Date(dateString);

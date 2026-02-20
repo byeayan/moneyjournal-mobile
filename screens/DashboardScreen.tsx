@@ -1,11 +1,13 @@
 import CalendarView from "@/components/common/CalendarView";
 import DailyTransactions from "@/components/common/DailyTransaction";
+import type { RootStackParamList } from "@/navigation/AppNavigator";
 import { useAuthStore } from "@/store/authStore";
 import { useTransactionStore } from "@/store/transactionStore";
 import colors from "@/utils/colors";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useNavigation } from "@react-navigation/native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useEffect, useMemo, useState } from "react";
 import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -19,7 +21,7 @@ function formatCurrency(value: number | undefined) {
 }
 
 export default function DashboardScreen() {
-  const navigation = useNavigation<any>();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { user } = useAuthStore();
   const displayName = user?.username || user?.name || "User";
 

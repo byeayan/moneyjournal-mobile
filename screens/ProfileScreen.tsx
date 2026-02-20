@@ -1,6 +1,8 @@
 import { useAuthStore } from "@/store/authStore";
+import type { RootStackParamList } from "@/navigation/AppNavigator";
 import colors from "@/utils/colors";
 import { useNavigation } from "@react-navigation/native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -32,7 +34,7 @@ function toDateInput(value?: string) {
 }
 
 export default function ProfileScreen() {
-  const navigation = useNavigation<any>();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList, "Profile">>();
   const { user, fetchCurrentUser, updateCurrentUser, deleteCurrentUser, logout } = useAuthStore();
 
   const [username, setUsername] = useState("");

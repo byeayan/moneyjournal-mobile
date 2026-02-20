@@ -239,38 +239,49 @@ export default function IncomeScreen({ navigation, route }: IncomeScreenProps) {
             </View>
 
             <View style={styles.buttonsRow}>
-              <TouchableOpacity
-                style={styles.saveButton}
-                onPress={async () => {
-                  if (!amount || !category) return;
-                  if (!note.trim()) {
-                    Alert.alert("Validation", "Note is required.");
-                    return;
-                  }
+                <TouchableOpacity
+                  style={styles.saveButton}
+                  onPress={async () => {
+                    if (!amount || !category) return;
+                    if (!note.trim()) {
+                      Alert.alert("Validation", "Note is required.");
+                      return;
+                    }
+                    const parsedAmount = Number(amount);
+                    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+                      Alert.alert("Validation", "Amount must be greater than 0.");
+                      return;
+                    }
 
-                  const now = new Date();
-                  const txDate = new Date(entryDate);
+                    const now = new Date();
+                    const txDate = new Date(entryDate);
 
                   if (!manualTime && isSameDay(txDate, now)) {
                     txDate.setHours(now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds());
                   }
 
-                  if (txDate > now) {
-                    Alert.alert("Invalid time", "Future date/time transactions are not allowed.");
-                    return;
-                  }
+                    if (txDate > now) {
+                      Alert.alert("Invalid time", "Future date/time transactions are not allowed.");
+                      return;
+                    }
 
-                  await addTransaction({
-                    amount: parseFloat(amount),
-                    note: note.trim(),
-                    description: description.trim(),
-                    category,
-                    type: "income",
-                    date: txDate.toISOString(),
-                  });
-                  navigation.goBack();
-                }}
-              >
+                    try {
+                      await addTransaction({
+                        amount: parsedAmount,
+                        note: note.trim(),
+                        description: description.trim(),
+                        category,
+                        type: "income",
+                        date: txDate.toISOString(),
+                      });
+                      navigation.goBack();
+                    } catch (error) {
+                      const message =
+                        error instanceof Error ? error.message : "Failed to save transaction.";
+                      Alert.alert("Error", message);
+                    }
+                  }}
+                >
                 <Text style={styles.saveText}>Save</Text>
               </TouchableOpacity>
 

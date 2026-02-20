@@ -64,10 +64,7 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
         throw new Error('Note is required.');
       }
 
-      const token = useAuthStore.getState().authToken;
-      if (!token) {
-        throw new Error('Authentication token is missing. Please log in.');
-      }
+      const token = await useAuthStore.getState().requireValidToken();
 
       const response = await fetch(`${API_BASE_URL}/transactions`, {
         method: 'POST',
@@ -103,51 +100,24 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
   },
 
   updateTransaction: async (id, payload) => {
-    const token = useAuthStore.getState().authToken;
-    if (!token) throw new Error('No auth token found');
+    const token = await useAuthStore.getState().requireValidToken();
 
-    const headers = {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    };
+    const response = await fetch(`${API_BASE_URL}/transactions/${id}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
+    });
 
-    const attempts: Array<{ method: 'PUT' | 'PATCH' | 'POST'; url: string; body: any }> = [
-      { method: 'PUT', url: `${API_BASE_URL}/transactions/${id}`, body: payload },
-      { method: 'PATCH', url: `${API_BASE_URL}/transactions/${id}`, body: payload },
-      { method: 'PUT', url: `${API_BASE_URL}/transactions`, body: { id, ...payload } },
-      { method: 'PATCH', url: `${API_BASE_URL}/transactions`, body: { id, ...payload } },
-      { method: 'PUT', url: `${API_BASE_URL}/transactions`, body: { _id: id, ...payload } },
-      { method: 'PATCH', url: `${API_BASE_URL}/transactions`, body: { _id: id, ...payload } },
-      { method: 'POST', url: `${API_BASE_URL}/transactions/update/${id}`, body: payload },
-      { method: 'POST', url: `${API_BASE_URL}/transactions/update`, body: { id, ...payload } },
-      { method: 'POST', url: `${API_BASE_URL}/transactions/update`, body: { _id: id, ...payload } },
-      { method: 'POST', url: `${API_BASE_URL}/transactions/${id}`, body: payload },
-    ];
-
-    let lastError = 'Failed to update transaction';
-    let updatedTransaction: Transaction | null = null;
-
-    for (const attempt of attempts) {
-      const response = await fetch(attempt.url, {
-        method: attempt.method,
-        headers,
-        body: JSON.stringify(attempt.body),
-      });
-
-      const body = await readResponseBody(response);
-      if (response.ok) {
-        const updatedRaw = (body as any)?.transaction ?? body ?? { ...payload, id };
-        updatedTransaction = normalizeTransaction({ ...updatedRaw, id });
-        break;
-      }
-
-      lastError = extractErrorMessage(body, `Failed to update transaction (${response.status})`);
-      if (![400, 404, 405].includes(response.status)) break;
+    const body = await readResponseBody(response);
+    if (!response.ok) {
+      throw new Error(extractErrorMessage(body, `Failed to update transaction (${response.status})`));
     }
 
-    if (!updatedTransaction) {
-      throw new Error(lastError);
-    }
+    const updatedRaw = (body as any)?.transaction ?? body ?? { ...payload, id };
+    const updatedTransaction = normalizeTransaction({ ...updatedRaw, id });
 
     set((state) => ({
       transactions: state.transactions.map((t) => (t.id === id ? updatedTransaction : t)),
@@ -159,49 +129,19 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
   },
 
   deleteTransaction: async (id) => {
-    const token = useAuthStore.getState().authToken;
-    if (!token) throw new Error('No auth token found');
+    const token = await useAuthStore.getState().requireValidToken();
 
-    const headers = {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    };
+    const response = await fetch(`${API_BASE_URL}/transactions/${id}`, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    });
 
-    const attempts: Array<{ method: 'DELETE' | 'POST'; url: string; body?: any }> = [
-      { method: 'DELETE', url: `${API_BASE_URL}/transactions/${id}` },
-      { method: 'DELETE', url: `${API_BASE_URL}/transactions`, body: { id } },
-      { method: 'DELETE', url: `${API_BASE_URL}/transactions`, body: { _id: id } },
-      { method: 'POST', url: `${API_BASE_URL}/transactions/delete/${id}` },
-      { method: 'POST', url: `${API_BASE_URL}/transactions/delete`, body: { id } },
-      { method: 'POST', url: `${API_BASE_URL}/transactions/delete`, body: { _id: id } },
-      { method: 'POST', url: `${API_BASE_URL}/transactions/${id}/delete` },
-      { method: 'DELETE', url: `${API_BASE_URL}/transactions/${id}` },
-      { method: 'DELETE', url: `${API_BASE_URL}/transactions`, body: { id } },
-    ];
-
-    let deleted = false;
-    let lastError = 'Failed to delete transaction';
-
-    for (const attempt of attempts) {
-      const response = await fetch(attempt.url, {
-        method: attempt.method,
-        headers,
-        body: attempt.body ? JSON.stringify(attempt.body) : undefined,
-      });
-
-      const body = await readResponseBody(response);
-
-      if (response.ok) {
-        deleted = true;
-        break;
-      }
-
-      lastError = extractErrorMessage(body, `Failed to delete transaction (${response.status})`);
-      if (![400, 404, 405].includes(response.status)) break;
-    }
-
-    if (!deleted) {
-      throw new Error(lastError);
+    const body = await readResponseBody(response);
+    if (!response.ok) {
+      throw new Error(extractErrorMessage(body, `Failed to delete transaction (${response.status})`));
     }
 
     set((state) => ({
@@ -213,8 +153,7 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
   },
 
   fetchTransactions: async (date: Date | string) => {
-    const token = useAuthStore.getState().authToken;
-    if (!token) throw new Error('No auth token found');
+    const token = await useAuthStore.getState().requireValidToken();
     const requestId = ++latestDayFetchRequestId;
 
     const day = toLocalDateKey(new Date(date));
@@ -238,8 +177,7 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
   },
 
   fetchTransactionsByMonth: async (date: Date | string) => {
-    const token = useAuthStore.getState().authToken;
-    if (!token) throw new Error('No auth token found');
+    const token = await useAuthStore.getState().requireValidToken();
     const requestId = ++latestMonthFetchRequestId;
 
     const d = new Date(date);
@@ -269,9 +207,7 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
 
   getTransactionMetrics: async () => {
     try {
-      const token = useAuthStore.getState().authToken;
-
-      if (!token) throw new Error('No auth token found');
+      const token = await useAuthStore.getState().requireValidToken();
 
       const response = await fetch(`${API_BASE_URL}/transactions/metrics`, {
         method: 'GET',
