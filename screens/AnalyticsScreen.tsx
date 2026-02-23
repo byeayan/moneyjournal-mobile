@@ -2,6 +2,7 @@ import type { RootStackParamList } from '@/navigation/AppNavigator';
 import ChartWebView from '@/components/charts/ChartWebView';
 import { API_BASE_URL } from '@/config/api';
 import { useAuthStore } from '@/store/authStore';
+import { toMonthKey } from '@/store/budgetStore';
 import type { Transaction } from '@/types/transaction';
 import colors from '@/utils/colors';
 import { useNavigation } from '@react-navigation/native';
@@ -420,13 +421,29 @@ export default function AnalyticsScreen() {
     </View>
   );
 
+  const handleGenerateReport = () => {
+    navigation.navigate('ReportPreview', {
+      transactions: allTransactions,
+      selectedMonthKey: toMonthKey(new Date()),
+    });
+  };
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-            <Text style={styles.backText}>Back</Text>
-          </TouchableOpacity>
+          <View style={styles.headerTopRow}>
+            <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+              <Text style={styles.backText}>Back</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={handleGenerateReport}
+              style={[styles.reportHeaderButton, !hasData && styles.reportHeaderButtonDisabled]}
+              disabled={!hasData}
+            >
+              <Text style={styles.reportHeaderButtonText}>Report</Text>
+            </TouchableOpacity>
+          </View>
           <Text style={styles.title}>Analytics</Text>
         </View>
 
@@ -539,6 +556,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   content: { padding: 16, paddingBottom: 30 },
   header: { marginBottom: 14 },
+  headerTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   backButton: {
     alignSelf: 'flex-start',
     paddingVertical: 6,
@@ -548,6 +566,16 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   backText: { color: colors.white, fontSize: 14, fontWeight: '600' },
+  reportHeaderButton: {
+    backgroundColor: colors.primary,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  reportHeaderButtonDisabled: {
+    opacity: 0.45,
+  },
+  reportHeaderButtonText: { color: colors.white, fontSize: 13, fontWeight: '700' },
   title: { color: colors.white, fontSize: 28, fontWeight: 'bold' },
   toggleWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
   toggleBtn: {

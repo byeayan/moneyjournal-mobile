@@ -2,6 +2,7 @@ import DropdownField from '@/components/common/DropdownField';
 import type { RootStackParamList } from '@/navigation/AppNavigator';
 import { toMonthKey, useBudgetStore } from '@/store/budgetStore';
 import { useTransactionStore } from '@/store/transactionStore';
+import type { Transaction } from '@/types/transaction';
 import { expenseCategories } from '@/utils/categories';
 import colors from '@/utils/colors';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -92,8 +93,8 @@ export default function BudgetScreen() {
   const setBudgetLimit = useBudgetStore((state) => state.setBudgetLimit);
   const setMonthlyTotal = useBudgetStore((state) => state.setMonthlyTotal);
 
-  const fetchTransactionsByMonth = useTransactionStore((state) => state.fetchTransactionsByMonth);
-  const calendarTransactions = useTransactionStore((state) => state.calendarTransactions);
+  const fetchTransactionsForMonth = useTransactionStore((state) => state.fetchTransactionsForMonth);
+  const [monthTransactions, setMonthTransactions] = useState<Transaction[]>([]);
 
   useEffect(() => {
     if (!isBudgetHydrated) {
@@ -102,8 +103,26 @@ export default function BudgetScreen() {
   }, [initializeBudgets, isBudgetHydrated]);
 
   useEffect(() => {
-    void fetchTransactionsByMonth(selectedMonth);
-  }, [fetchTransactionsByMonth, selectedMonth]);
+    let active = true;
+
+    const loadMonthTransactions = async () => {
+      try {
+        const data = await fetchTransactionsForMonth(selectedMonth);
+        if (!active) return;
+        setMonthTransactions(data);
+      } catch (error) {
+        if (!active) return;
+        const message = error instanceof Error ? error.message : 'Failed to load monthly transactions.';
+        Alert.alert('Error', message);
+      }
+    };
+
+    void loadMonthTransactions();
+
+    return () => {
+      active = false;
+    };
+  }, [fetchTransactionsForMonth, selectedMonth]);
 
   const monthKey = toMonthKey(selectedMonth);
   const monthStart = useMemo(
@@ -116,8 +135,8 @@ export default function BudgetScreen() {
   );
 
   const expenseTransactions = useMemo(
-    () => calendarTransactions.filter((transaction) => transaction.type === 'expense'),
-    [calendarTransactions]
+    () => monthTransactions.filter((transaction) => transaction.type === 'expense'),
+    [monthTransactions]
   );
 
   const monthBudgets = useMemo(

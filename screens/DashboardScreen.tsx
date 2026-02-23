@@ -8,8 +8,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { useEffect, useMemo, useState } from "react";
-import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Alert, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 function formatCurrency(value: number | undefined) {
@@ -34,16 +34,21 @@ export default function DashboardScreen() {
 
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [showAllRecent, setShowAllRecent] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const loadTransactions = useCallback(async () => {
+    await Promise.all([
+      fetchTransactions(selectedDate),
+      fetchTransactionsByMonth(selectedDate),
+    ]);
+  }, [fetchTransactions, fetchTransactionsByMonth, selectedDate]);
 
   useEffect(() => {
     let active = true;
 
-    const loadTransactions = async () => {
+    const loadInitialData = async () => {
       try {
-        await Promise.all([
-          fetchTransactions(selectedDate),
-          fetchTransactionsByMonth(selectedDate),
-        ]);
+        await loadTransactions();
       } catch (error) {
         if (!active) return;
         const message = error instanceof Error ? error.message : "Failed to load transactions.";
@@ -51,11 +56,23 @@ export default function DashboardScreen() {
       }
     };
 
-    loadTransactions();
+    loadInitialData();
     return () => {
       active = false;
     };
-  }, [selectedDate]);
+  }, [loadTransactions]);
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await loadTransactions();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to refresh transactions.";
+      Alert.alert("Error", message);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [loadTransactions]);
 
   const monthlyIncome = useMemo(
     () =>
@@ -91,7 +108,13 @@ export default function DashboardScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
-      <ScrollView style={styles.container} contentContainerStyle={{ paddingTop: 10, paddingBottom: 50 }}>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={{ paddingTop: 10, paddingBottom: 50 }}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.highlight} />
+        }
+      >
         <View style={styles.topHeader}>
           <Text style={styles.welcomeLabel}>Welcome,</Text>
           <Text style={styles.title}>{displayName}</Text>

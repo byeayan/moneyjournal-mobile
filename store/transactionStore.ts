@@ -50,6 +50,7 @@ interface TransactionState {
   deleteTransaction: (id: string) => Promise<void>;
   fetchTransactions: (date: Date | string) => Promise<void>;
   fetchTransactionsByMonth: (date: Date | string) => Promise<void>;
+  fetchTransactionsForMonth: (date: Date | string) => Promise<Transaction[]>;
   getTransactionMetrics: () => Promise<TransactionMetrics>;
 }
 
@@ -203,6 +204,32 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
     } else {
       throw new Error(data.message || 'Fetching monthly transactions failed');
     }
+  },
+
+  fetchTransactionsForMonth: async (date: Date | string) => {
+    const token = await useAuthStore.getState().requireValidToken();
+
+    const d = new Date(date);
+    const month = d.getMonth() + 1;
+    const year = d.getFullYear();
+
+    const response = await fetch(
+      `${API_BASE_URL}/transactions?month=${month}&year=${year}`,
+      {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
+
+    const data = await response.json();
+    if (response.ok) {
+      return Array.isArray(data) ? data.map(normalizeTransaction) : [];
+    }
+
+    throw new Error(data.message || 'Fetching monthly transactions failed');
   },
 
   getTransactionMetrics: async () => {

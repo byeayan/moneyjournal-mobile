@@ -8,6 +8,7 @@ import IncomeScreen from '@/screens/IncomeScreen';
 import IndexScreen from '@/screens/IndexScreen';
 import LoginScreen from '@/screens/LoginScreen';
 import ProfileScreen from '@/screens/ProfileScreen';
+import ReportPreviewScreen from '@/screens/ReportPreviewScreen';
 import SignupScreen from '@/screens/SignupScreen';
 import { useAuthStore } from '@/store/authStore';
 import type { Transaction } from '@/types/transaction';
@@ -44,6 +45,7 @@ export type RootStackParamList = {
     title?: string;
   };
   FullCalendar: { transactions: Transaction[]; selectedDate?: string };
+  ReportPreview: { transactions: Transaction[]; selectedMonthKey: string };
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -265,6 +267,7 @@ export default function AppNavigator() {
       <Stack.Screen name="Analytics" component={AnalyticsScreen} options={{ headerShown: false }} />
       <Stack.Screen name="DailyTransaction" component={DailyTransactionScreen} options={{ headerShown: false }} />
       <Stack.Screen name="FullCalendar" component={FullCalendarScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="ReportPreview" component={ReportPreviewScreen} options={{ headerShown: false }} />
     </Stack.Navigator>
   );
 }
