@@ -1,12 +1,14 @@
-import type { RootStackParamList } from '@/navigation/AppNavigator';
+﻿import type { RootStackParamList } from '@/navigation/AppNavigator';
+import { useGoalsStore } from '@/store/goalsStore';
 import { useTransactionStore } from '@/store/transactionStore';
 import type { Transaction } from '@/types/transaction';
 import colors from '@/utils/colors';
+import { buildLiabilityCalendarItems } from '@/utils/liabilitySchedule';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp, NativeStackScreenProps } from '@react-navigation/native-stack';
-import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Alert, Modal, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Calendar, DateData } from 'react-native-calendars';
 
@@ -38,18 +40,29 @@ function parseLocalDateString(dateString: string) {
 export default function FullCalendarScreen({ route }: FullCalendarScreenProps) {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { fetchTransactionsByMonth, calendarTransactions } = useTransactionStore();
+  const liabilities = useGoalsStore((state) => state.liabilities);
+  const liabilityPayments = useGoalsStore((state) => state.liabilityPayments);
 
   const initialDate = route.params?.selectedDate ? new Date(route.params.selectedDate) : new Date();
   const [selectedDate, setSelectedDate] = useState(initialDate);
   const [selectedChipTransaction, setSelectedChipTransaction] = useState<Transaction | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const liabilityItems = useMemo(
+    () => buildLiabilityCalendarItems(liabilities, liabilityPayments),
+    [liabilities, liabilityPayments]
+  );
+
+  const loadMonth = useCallback(async () => {
+    await fetchTransactionsByMonth(selectedDate);
+  }, [fetchTransactionsByMonth, selectedDate]);
 
   useEffect(() => {
     let active = true;
 
-    const loadMonth = async () => {
+    const load = async () => {
       try {
-        await fetchTransactionsByMonth(selectedDate);
+        await loadMonth();
       } catch (error) {
         if (!active) return;
         const message = error instanceof Error ? error.message : 'Failed to load monthly transactions.';
@@ -57,11 +70,23 @@ export default function FullCalendarScreen({ route }: FullCalendarScreenProps) {
       }
     };
 
-    loadMonth();
+    void load();
     return () => {
       active = false;
     };
-  }, [selectedDate]);
+  }, [loadMonth]);
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await loadMonth();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to refresh calendar.';
+      Alert.alert('Error', message);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [loadMonth]);
 
   const allTransactions = useMemo<Transaction[]>(
     () => (calendarTransactions.length ? calendarTransactions : route.params?.transactions ?? []),
@@ -88,6 +113,10 @@ export default function FullCalendarScreen({ route }: FullCalendarScreenProps) {
       count: selectedDayTransactions.length,
     };
   }, [selectedDayTransactions]);
+  const selectedDayLiabilities = useMemo(
+    () => liabilityItems.filter((item) => item.date === toLocalDateKey(selectedDate)),
+    [liabilityItems, selectedDate]
+  );
 
   const selectedCategoryChips = useMemo(() => {
     const map: Record<string, { income: number; expense: number }> = {};
@@ -166,6 +195,13 @@ export default function FullCalendarScreen({ route }: FullCalendarScreenProps) {
         color: t.type === 'income' ? colors.income : colors.expense,
       });
     });
+    liabilityItems.forEach((item) => {
+      if (!marks[item.date]) marks[item.date] = { dots: [] };
+      marks[item.date].dots.push({
+        key: `${item.id}-${marks[item.date].dots.length}`,
+        color: '#F5A623',
+      });
+    });
 
     const selectedStr = toLocalDateKey(selectedDate);
     marks[selectedStr] = {
@@ -176,11 +212,14 @@ export default function FullCalendarScreen({ route }: FullCalendarScreenProps) {
     };
 
     setMarkedDates(marks);
-  }, [allTransactions, selectedDate]);
+  }, [allTransactions, liabilityItems, selectedDate]);
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.highlight} />}
+      >
         <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
           <Ionicons name="arrow-back" size={22} color={colors.white} />
           <Text style={styles.backButtonText}>Back</Text>
@@ -214,11 +253,25 @@ export default function FullCalendarScreen({ route }: FullCalendarScreenProps) {
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Selected Day Summary</Text>
           <Text style={styles.cardText}>Transactions: {selectedSummary.count}</Text>
-          <Text style={[styles.cardText, { color: colors.income }]}>Income: +₹{formatCurrency(selectedSummary.income)}</Text>
-          <Text style={[styles.cardText, { color: colors.expense }]}>Expense: -₹{formatCurrency(selectedSummary.expense)}</Text>
+          <Text style={[styles.cardText, { color: colors.income }]}>Income: +Rs {formatCurrency(selectedSummary.income)}</Text>
+          <Text style={[styles.cardText, { color: colors.expense }]}>Expense: -Rs {formatCurrency(selectedSummary.expense)}</Text>
           <Text style={[styles.cardText, styles.netText]}>
-            Net: {selectedSummary.net >= 0 ? '+₹' : '-₹'}{formatCurrency(Math.abs(selectedSummary.net))}
+            Net: {selectedSummary.net >= 0 ? '+Rs ' : '-Rs '}
+            {formatCurrency(Math.abs(selectedSummary.net))}
           </Text>
+          {selectedDayLiabilities.length > 0 && (
+            <>
+              <Text style={[styles.cardText, { marginTop: 6, color: '#F5A623', fontWeight: '700' }]}>
+                Total Liability Due: Rs
+                {formatCurrency(selectedDayLiabilities.reduce((sum, item) => sum + item.amount, 0))}
+              </Text>
+              {selectedDayLiabilities.map((item) => (
+                <Text key={item.id} style={[styles.cardText, { color: '#F5A623' }]}>
+                  • {item.title} ({item.type.toUpperCase()}): Rs{formatCurrency(item.amount)}
+                </Text>
+              ))}
+            </>
+          )}
           <TouchableOpacity style={styles.linkButton} onPress={openDayTransactions}>
             <Text style={styles.linkButtonText}>View Day Transactions</Text>
           </TouchableOpacity>
@@ -239,7 +292,8 @@ export default function FullCalendarScreen({ route }: FullCalendarScreenProps) {
                 >
                   <Text style={styles.chipTitle}>{chip.category}</Text>
                   <Text style={[styles.chipValue, { color: chip.net >= 0 ? colors.income : colors.expense }]}>
-                    {chip.net >= 0 ? '+₹' : '-₹'}{formatCurrency(Math.abs(chip.net))}
+                    {chip.net >= 0 ? '+Rs ' : '-Rs '}
+                    {formatCurrency(Math.abs(chip.net))}
                   </Text>
                 </TouchableOpacity>
               ))}
@@ -251,13 +305,12 @@ export default function FullCalendarScreen({ route }: FullCalendarScreenProps) {
           <Text style={styles.cardTitle}>Monthly Insight</Text>
           {monthlyInsight ? (
             <Text style={styles.cardText}>
-              Highest spend category this month: {monthlyInsight.category} (₹{formatCurrency(monthlyInsight.amount)})
+              Highest spend category this month: {monthlyInsight.category} (Rs {formatCurrency(monthlyInsight.amount)})
             </Text>
           ) : (
             <Text style={styles.cardMuted}>No expense insight available for this month.</Text>
           )}
         </View>
-
       </ScrollView>
 
       <Modal
@@ -515,3 +568,5 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
 });
+
+

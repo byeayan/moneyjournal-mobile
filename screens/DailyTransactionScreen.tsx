@@ -8,11 +8,12 @@ import { expenseCategories, incomeCategories } from '@/utils/categories';
 import colors from '@/utils/colors';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   Alert,
   FlatList,
   Modal,
+  RefreshControl,
   StyleSheet,
   Text,
   TextInput,
@@ -43,7 +44,12 @@ function formatAmount(value: number) {
 
 export default function DailyTransactionScreen({ route }: DailyTransactionScreenProps) {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList, 'DailyTransaction'>>();
-  const { updateTransaction, deleteTransaction } = useTransactionStore();
+  const {
+    updateTransaction,
+    deleteTransaction,
+    fetchTransactions,
+    fetchTransactionsByMonth,
+  } = useTransactionStore();
   const { date: dateString, transactions, showAll = false, title } = route.params;
   const date = new Date(dateString);
 
@@ -56,6 +62,7 @@ export default function DailyTransactionScreen({ route }: DailyTransactionScreen
   const [description, setDescription] = useState('');
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [skipDeleteConfirm, setSkipDeleteConfirm] = useState(false);
   const [dontAskDeleteAgain, setDontAskDeleteAgain] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'danger' } | null>(null);
@@ -79,6 +86,37 @@ export default function DailyTransactionScreen({ route }: DailyTransactionScreen
     [items]
   );
   const editCategoryOptions = editingTx?.type === 'income' ? incomeCategories : expenseCategories;
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      if (showAll) {
+        await fetchTransactionsByMonth(date);
+        let nextItems = useTransactionStore.getState().calendarTransactions;
+
+        if (title?.includes(' - ')) {
+          const selectedCategory = title.split(' - ')[0].trim().toLowerCase();
+          nextItems = nextItems.filter((tx) => (tx.category || '').trim().toLowerCase() === selectedCategory);
+        } else if (title?.endsWith(' Expenses')) {
+          nextItems = nextItems.filter((tx) => tx.type === 'expense');
+        }
+
+        setItems(nextItems);
+      } else {
+        await fetchTransactions(date);
+        const dayKey = date.toDateString();
+        const nextItems = useTransactionStore
+          .getState()
+          .transactions.filter((tx) => new Date(tx.date).toDateString() === dayKey);
+        setItems(nextItems);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to refresh transactions.';
+      Alert.alert('Error', message);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [date, fetchTransactions, fetchTransactionsByMonth, showAll, title]);
 
   const openEdit = (tx: Transaction) => {
     setEditingTx(tx);
@@ -185,6 +223,7 @@ export default function DailyTransactionScreen({ route }: DailyTransactionScreen
       <FlatList
         data={sortedItems}
         contentContainerStyle={{ paddingBottom: 28 }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.highlight} />}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
           <View style={styles.transactionCard}>

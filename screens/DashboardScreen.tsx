@@ -2,13 +2,16 @@ import CalendarView from "@/components/common/CalendarView";
 import DailyTransactions from "@/components/common/DailyTransaction";
 import type { RootStackParamList } from "@/navigation/AppNavigator";
 import { useAuthStore } from "@/store/authStore";
+import { useGoalsStore } from "@/store/goalsStore";
 import { useTransactionStore } from "@/store/transactionStore";
 import colors from "@/utils/colors";
+import { buildLiabilityCalendarItems } from "@/utils/liabilitySchedule";
+import { subscribeTabDoublePress } from "@/utils/tabDoublePressBus";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -31,10 +34,13 @@ export default function DashboardScreen() {
     transactions,
     calendarTransactions,
   } = useTransactionStore();
+  const liabilities = useGoalsStore((state) => state.liabilities);
+  const liabilityPayments = useGoalsStore((state) => state.liabilityPayments);
 
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [showAllRecent, setShowAllRecent] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const scrollRef = useRef<ScrollView | null>(null);
 
   const loadTransactions = useCallback(async () => {
     await Promise.all([
@@ -74,6 +80,13 @@ export default function DashboardScreen() {
     }
   }, [loadTransactions]);
 
+  useEffect(() => {
+    const unsubscribe = subscribeTabDoublePress("HomeTab", () => {
+      scrollRef.current?.scrollTo({ y: 0, animated: true });
+    });
+    return unsubscribe;
+  }, []);
+
   const monthlyIncome = useMemo(
     () =>
       calendarTransactions
@@ -98,6 +111,10 @@ export default function DashboardScreen() {
     [calendarTransactions]
   );
   const netBalance = monthlyIncome - monthlyExpense;
+  const liabilityCalendarItems = useMemo(
+    () => buildLiabilityCalendarItems(liabilities, liabilityPayments),
+    [liabilities, liabilityPayments]
+  );
 
   const handleMaximizeCalendar = () => {
     navigation.navigate("FullCalendar", {
@@ -109,6 +126,7 @@ export default function DashboardScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <ScrollView
+        ref={scrollRef}
         style={styles.container}
         contentContainerStyle={{ paddingTop: 10, paddingBottom: 50 }}
         refreshControl={
@@ -175,6 +193,7 @@ export default function DashboardScreen() {
             selectedDate={selectedDate}
             onDateSelect={setSelectedDate}
             transactions={calendarTransactions}
+            liabilityDates={liabilityCalendarItems.map((item) => ({ id: item.id, date: item.date }))}
             cellHeight={32}
             theme={{
               monthTextColor: colors.highlight,

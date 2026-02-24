@@ -4,11 +4,12 @@ import { useTransactionStore } from "@/store/transactionStore";
 import { incomeCategories } from "@/utils/categories";
 import colors from "@/utils/colors";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   Alert,
   Keyboard,
   Platform,
+  RefreshControl,
   StyleSheet,
   Text,
   TextInput,
@@ -71,6 +72,7 @@ export default function IncomeScreen({ navigation, route }: IncomeScreenProps) {
   const [note, setNote] = useState<string>("");
   const [description, setDescription] = useState<string>("");
   const [keypadVisible, setKeypadVisible] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     const day = String(entryDate.getDate()).padStart(2, "0");
@@ -132,6 +134,20 @@ export default function IncomeScreen({ navigation, route }: IncomeScreenProps) {
     }
   }
 
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    const resetDate = resolveInitialEntryDate(route.params?.date);
+    setEntryDate(resetDate);
+    setAmount("");
+    setCategory("");
+    setNote("");
+    setDescription("");
+    setManualTime(false);
+    setKeypadVisible(false);
+    Keyboard.dismiss();
+    setRefreshing(false);
+  }, [route.params?.date]);
+
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.headerRow}>
@@ -155,6 +171,7 @@ export default function IncomeScreen({ navigation, route }: IncomeScreenProps) {
             enableOnAndroid
             extraScrollHeight={80}
             keyboardShouldPersistTaps="handled"
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.highlight} />}
           >
             <View style={styles.row}>
               <Text style={styles.label}>Date</Text>

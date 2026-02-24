@@ -7,8 +7,8 @@ import type { Transaction } from '@/types/transaction';
 import colors from '@/utils/colors';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 type AnalyticsNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Analytics'>;
@@ -224,70 +224,80 @@ export default function AnalyticsScreen() {
 
   const [allTransactions, setAllTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [timeframe, setTimeframe] = useState<Timeframe>('monthly');
   const [selectedWeekIndex, setSelectedWeekIndex] = useState(0);
 
-  useEffect(() => {
-    const fetchAllTransactions = async () => {
-      if (!authToken) {
-        setError('Not authenticated');
-        setLoading(false);
-        return;
+  const fetchAllTransactions = useCallback(async () => {
+    if (!authToken) {
+      setError('Not authenticated');
+      setLoading(false);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+
+      const headers = {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${authToken}`,
+      };
+
+      let merged: Transaction[] = [];
+      let fetched = false;
+
+      const allResponse = await fetch(`${API_BASE_URL}/transactions`, { method: 'GET', headers });
+      const allData = await allResponse.json();
+
+      if (allResponse.ok) {
+        const raw = extractTransactions(allData);
+        if (raw.length > 0) {
+          merged = raw.map(normalizeTransaction);
+          fetched = true;
+        }
       }
 
-      try {
-        setLoading(true);
-        setError(null);
-
-        const headers = {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${authToken}`,
-        };
-
-        let merged: Transaction[] = [];
-        let fetched = false;
-
-        const allResponse = await fetch(`${API_BASE_URL}/transactions`, { method: 'GET', headers });
-        const allData = await allResponse.json();
-
-        if (allResponse.ok) {
-          const raw = extractTransactions(allData);
-          if (raw.length > 0) {
-            merged = raw.map(normalizeTransaction);
-            fetched = true;
-          }
-        }
-
-        if (!fetched) {
-          const now = new Date();
-          const monthlyResults = await Promise.all(
-            Array.from({ length: 12 }).map(async (_, idx) => {
-              const d = new Date(now.getFullYear(), now.getMonth() - idx, 1);
-              const month = d.getMonth() + 1;
-              const year = d.getFullYear();
-              const resp = await fetch(`${API_BASE_URL}/transactions?month=${month}&year=${year}`, {
-                method: 'GET',
-                headers,
-              });
-              const payload = await resp.json();
-              if (!resp.ok) return [];
-              return extractTransactions(payload).map(normalizeTransaction);
-            })
-          );
-          merged = monthlyResults.flat();
-        }
-
-        setAllTransactions(dedupeTransactions(merged));
-      } catch (e) {
-        setError(e instanceof Error ? e.message : 'Failed to load analytics data');
-      } finally {
-        setLoading(false);
+      if (!fetched) {
+        const now = new Date();
+        const monthlyResults = await Promise.all(
+          Array.from({ length: 12 }).map(async (_, idx) => {
+            const d = new Date(now.getFullYear(), now.getMonth() - idx, 1);
+            const month = d.getMonth() + 1;
+            const year = d.getFullYear();
+            const resp = await fetch(`${API_BASE_URL}/transactions?month=${month}&year=${year}`, {
+              method: 'GET',
+              headers,
+            });
+            const payload = await resp.json();
+            if (!resp.ok) return [];
+            return extractTransactions(payload).map(normalizeTransaction);
+          })
+        );
+        merged = monthlyResults.flat();
       }
-    };
 
-    void fetchAllTransactions();
+      setAllTransactions(dedupeTransactions(merged));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to load analytics data');
+    } finally {
+      setLoading(false);
+    }
   }, [authToken]);
+
+  useEffect(() => {
+    void fetchAllTransactions();
+  }, [fetchAllTransactions]);
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await fetchAllTransactions();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [fetchAllTransactions]);
 
   const hasData = allTransactions.length > 0;
   const anchorDate = useMemo(() => (hasData ? new Date(allTransactions[0].date) : new Date()), [hasData, allTransactions]);
@@ -430,7 +440,11 @@ export default function AnalyticsScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.highlight} />}
+      >
         <View style={styles.header}>
           <View style={styles.headerTopRow}>
             <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>

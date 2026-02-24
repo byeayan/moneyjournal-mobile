@@ -1,12 +1,14 @@
 import { useAuthStore } from "@/store/authStore";
 import type { RootStackParamList } from "@/navigation/AppNavigator";
 import colors from "@/utils/colors";
+import { subscribeTabDoublePress } from "@/utils/tabDoublePressBus";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Modal,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -55,6 +57,8 @@ export default function ProfileScreen() {
     title: "",
     message: "",
   });
+  const [refreshing, setRefreshing] = useState(false);
+  const scrollRef = useRef<ScrollView | null>(null);
 
   const showFeedback = (title: string, message: string) => {
     setFeedbackModal({ visible: true, title, message });
@@ -69,20 +73,36 @@ export default function ProfileScreen() {
     navigation.reset({ index: 0, routes: [{ name: "Index" }] });
   };
 
-  useEffect(() => {
-    const load = async () => {
-      try {
-        setLoading(true);
-        await fetchCurrentUser();
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "Failed to load profile";
-        showFeedback("Error", message);
-      } finally {
-        setLoading(false);
-      }
-    };
+  const loadProfile = useCallback(async () => {
+    try {
+      setLoading(true);
+      await fetchCurrentUser();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to load profile";
+      showFeedback("Error", message);
+    } finally {
+      setLoading(false);
+    }
+  }, [fetchCurrentUser]);
 
-    load();
+  useEffect(() => {
+    void loadProfile();
+  }, [loadProfile]);
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await loadProfile();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [loadProfile]);
+
+  useEffect(() => {
+    const unsubscribe = subscribeTabDoublePress("ProfileTab", () => {
+      scrollRef.current?.scrollTo({ y: 0, animated: true });
+    });
+    return unsubscribe;
   }, []);
 
   useEffect(() => {
@@ -150,7 +170,12 @@ export default function ProfileScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
-      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <ScrollView
+        ref={scrollRef}
+        style={styles.container}
+        contentContainerStyle={styles.content}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.highlight} />}
+      >
         <View style={styles.headerRow}>
           <TouchableOpacity onPress={() => navigation.goBack()}>
             <Text style={styles.back}>{"<"}</Text>

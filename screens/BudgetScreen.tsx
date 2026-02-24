@@ -5,11 +5,12 @@ import { useTransactionStore } from '@/store/transactionStore';
 import type { Transaction } from '@/types/transaction';
 import { expenseCategories } from '@/utils/categories';
 import colors from '@/utils/colors';
+import { subscribeTabDoublePress } from '@/utils/tabDoublePressBus';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, Modal, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 type BudgetCard = {
@@ -85,6 +86,8 @@ export default function BudgetScreen() {
   const [budgetCategory, setBudgetCategory] = useState('');
   const [budgetAmount, setBudgetAmount] = useState('');
   const [monthlyTotalAmount, setMonthlyTotalAmount] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
+  const scrollRef = useRef<ScrollView | null>(null);
 
   const budgets = useBudgetStore((state) => state.budgets);
   const monthlyTotals = useBudgetStore((state) => state.monthlyTotals);
@@ -102,10 +105,15 @@ export default function BudgetScreen() {
     }
   }, [initializeBudgets, isBudgetHydrated]);
 
+  const loadMonthTransactions = useCallback(async () => {
+    const data = await fetchTransactionsForMonth(selectedMonth);
+    setMonthTransactions(data);
+  }, [fetchTransactionsForMonth, selectedMonth]);
+
   useEffect(() => {
     let active = true;
 
-    const loadMonthTransactions = async () => {
+    const load = async () => {
       try {
         const data = await fetchTransactionsForMonth(selectedMonth);
         if (!active) return;
@@ -117,12 +125,31 @@ export default function BudgetScreen() {
       }
     };
 
-    void loadMonthTransactions();
+    void load();
 
     return () => {
       active = false;
     };
   }, [fetchTransactionsForMonth, selectedMonth]);
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([initializeBudgets(), loadMonthTransactions()]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to refresh budget.';
+      Alert.alert('Error', message);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [initializeBudgets, loadMonthTransactions]);
+
+  useEffect(() => {
+    const unsubscribe = subscribeTabDoublePress('BudgetTab', () => {
+      scrollRef.current?.scrollTo({ y: 0, animated: true });
+    });
+    return unsubscribe;
+  }, []);
 
   const monthKey = toMonthKey(selectedMonth);
   const monthStart = useMemo(
@@ -273,7 +300,12 @@ export default function BudgetScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.root}>
-        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          ref={scrollRef}
+          contentContainerStyle={styles.content}
+          showsVerticalScrollIndicator={false}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.highlight} />}
+        >
           <View style={styles.monthRow}>
             <TouchableOpacity style={styles.monthButton} onPress={() => handleShiftMonth(-1)}>
               <Ionicons name="chevron-back" size={16} color={colors.white} />

@@ -8,6 +8,7 @@ type CalendarViewProps = {
   selectedDate: Date;
   onDateSelect: (date: Date) => void;
   transactions: Transaction[];
+  liabilityDates?: { id: string; date: string }[];
   showFullScreen?: boolean;
   cellHeight?: number;
   theme?: Record<string, unknown>;
@@ -28,6 +29,7 @@ export default function CalendarView({
   selectedDate,
   onDateSelect,
   transactions,
+  liabilityDates = [],
   showFullScreen = false,
   cellHeight = 32,
   theme,
@@ -42,6 +44,14 @@ export default function CalendarView({
       marks[dateStr].dots.push({
         key: `${t.id}-${marks[dateStr].dots.length}`,
         color: t.type === 'income' ? colors.primary : colors.highlight,
+      });
+    });
+
+    liabilityDates.forEach((item) => {
+      if (!marks[item.date]) marks[item.date] = { dots: [] };
+      marks[item.date].dots.push({
+        key: `${item.id}-${marks[item.date].dots.length}`,
+        color: '#F5A623',
       });
     });
 
@@ -75,7 +85,7 @@ export default function CalendarView({
     };
 
     setMarkedDates(marks);
-  }, [transactions, selectedDate, showFullScreen, cellHeight]);
+  }, [transactions, liabilityDates, selectedDate, showFullScreen, cellHeight]);
 
   return (
     <View style={styles.container}>

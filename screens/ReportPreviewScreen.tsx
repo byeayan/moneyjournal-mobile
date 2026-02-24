@@ -11,8 +11,8 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
-import React, { useEffect, useMemo, useState } from 'react';
-import { Modal, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Modal, Platform, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 type ReportRouteProp = RouteProp<RootStackParamList, 'ReportPreview'>;
@@ -74,6 +74,7 @@ export default function ReportPreviewScreen() {
   const [lastPdfUri, setLastPdfUri] = useState<string | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [feedback, setFeedback] = useState<{
     visible: boolean;
     title: string;
@@ -108,6 +109,15 @@ export default function ReportPreviewScreen() {
     }, 2000);
     return () => clearTimeout(timer);
   }, [feedback.visible, feedback.tone]);
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await initializeBudgets();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [initializeBudgets]);
 
   const report: MonthlyReport = useMemo(
     () =>
@@ -219,7 +229,11 @@ export default function ReportPreviewScreen() {
         <Text style={styles.headerTitle}>Report Preview</Text>
       </View>
 
-      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.highlight} />}
+      >
         <View style={styles.monthBanner}>
           <View style={styles.monthRow}>
             <TouchableOpacity style={styles.monthButton} onPress={() => handleShiftMonth(-1)}>
