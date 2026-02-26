@@ -20,6 +20,10 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Calendar, DateData } from "react-native-calendars";
 
 type Gender = "male" | "female" | "other" | "prefer_not_to_say";
+type CalendarHeaderArg = {
+  month: { getMonth: () => number; getFullYear: () => number };
+  addMonth: (count: number) => void;
+};
 
 const genderLabel: Record<Gender, string> = {
   male: "Male",
@@ -27,6 +31,8 @@ const genderLabel: Record<Gender, string> = {
   other: "Other",
   prefer_not_to_say: "Prefer Not",
 };
+const MONTH_LABELS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+const MIN_DOB_YEAR = 1900;
 
 function toDateInput(value?: string) {
   if (!value) return "";
@@ -46,6 +52,9 @@ export default function ProfileScreen() {
   const [gender, setGender] = useState<Gender>("prefer_not_to_say");
   const [loading, setLoading] = useState(false);
   const [showDobPicker, setShowDobPicker] = useState(false);
+  const [dobPickerMonth, setDobPickerMonth] = useState("");
+  const [showMonthMenu, setShowMonthMenu] = useState(false);
+  const [showYearMenu, setShowYearMenu] = useState(false);
   const [showGenderPicker, setShowGenderPicker] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [feedbackModal, setFeedbackModal] = useState<{
@@ -136,6 +145,21 @@ export default function ProfileScreen() {
     setShowGenderPicker(true);
   };
 
+  const openDobPicker = () => {
+    const baseDate = dob ? new Date(`${dob}T00:00:00`) : new Date();
+    const pickerDate = Number.isNaN(baseDate.getTime()) ? new Date() : baseDate;
+    const monthStart = new Date(pickerDate.getFullYear(), pickerDate.getMonth(), 1);
+    setDobPickerMonth(monthStart.toISOString().split("T")[0]);
+    setShowMonthMenu(false);
+    setShowYearMenu(false);
+    setShowDobPicker(true);
+  };
+
+  const availableYears = useMemo(() => {
+    const currentYear = new Date().getFullYear();
+    return Array.from({ length: currentYear - MIN_DOB_YEAR + 1 }, (_, index) => currentYear - index);
+  }, []);
+
   const onSave = async () => {
     if (!username.trim()) {
       showFeedback("Validation", "Username is required.");
@@ -199,7 +223,7 @@ export default function ProfileScreen() {
         <TextInput style={[styles.input, styles.readOnlyInput]} value={email} editable={false} selectTextOnFocus={false} />
 
         <Text style={styles.label}>DOB</Text>
-        <TouchableOpacity style={styles.inputLike} onPress={() => setShowDobPicker(true)}>
+        <TouchableOpacity style={styles.inputLike} onPress={openDobPicker}>
           <Text style={[styles.inputLikeText, !dob && styles.placeholderText]}>{dob || "Select date of birth"}</Text>
         </TouchableOpacity>
 
@@ -251,12 +275,111 @@ export default function ProfileScreen() {
               </View>
 
               <Calendar
-                current={dob || undefined}
+                current={dobPickerMonth || dob || undefined}
+                customHeader={({ month, addMonth }: CalendarHeaderArg) => {
+                  const visibleMonth = month.getMonth();
+                  const visibleYear = month.getFullYear();
+
+                  return (
+                    <View>
+                      <View style={styles.dobHeaderRow}>
+                        <TouchableOpacity
+                          style={styles.dobArrowBtn}
+                          onPress={() => {
+                            addMonth(-1);
+                            setShowMonthMenu(false);
+                            setShowYearMenu(false);
+                          }}
+                        >
+                          <Text style={styles.dobArrowText}>{"<"}</Text>
+                        </TouchableOpacity>
+
+                        <View style={styles.dobHeaderCenter}>
+                          <TouchableOpacity
+                            style={styles.dobHeaderChip}
+                            onPress={() => {
+                              setShowMonthMenu((prev) => !prev);
+                              setShowYearMenu(false);
+                            }}
+                          >
+                            <Text style={styles.dobHeaderChipText}>{MONTH_LABELS[visibleMonth]}</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={styles.dobHeaderChip}
+                            onPress={() => {
+                              setShowYearMenu((prev) => !prev);
+                              setShowMonthMenu(false);
+                            }}
+                          >
+                            <Text style={styles.dobHeaderChipText}>{visibleYear}</Text>
+                          </TouchableOpacity>
+                        </View>
+
+                        <TouchableOpacity
+                          style={styles.dobArrowBtn}
+                          onPress={() => {
+                            addMonth(1);
+                            setShowMonthMenu(false);
+                            setShowYearMenu(false);
+                          }}
+                        >
+                          <Text style={styles.dobArrowText}>{">"}</Text>
+                        </TouchableOpacity>
+                      </View>
+
+                      {showMonthMenu && (
+                        <View style={styles.dobMonthGrid}>
+                          {MONTH_LABELS.map((monthName, index) => (
+                            <TouchableOpacity
+                              key={monthName}
+                              style={[styles.dobMonthCell, index === visibleMonth && styles.dobMonthCellActive]}
+                              onPress={() => {
+                                addMonth(index - visibleMonth);
+                                setShowMonthMenu(false);
+                              }}
+                            >
+                              <Text style={styles.dobMonthCellText}>{monthName.slice(0, 3)}</Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      )}
+
+                      {showYearMenu && (
+                        <ScrollView style={styles.dobYearList} nestedScrollEnabled>
+                          {availableYears.map((year) => (
+                            <TouchableOpacity
+                              key={year}
+                              style={[styles.dobYearRow, year === visibleYear && styles.dobYearRowActive]}
+                              onPress={() => {
+                                addMonth((year - visibleYear) * 12);
+                                setShowYearMenu(false);
+                              }}
+                            >
+                              <Text style={styles.dobYearText}>{year}</Text>
+                            </TouchableOpacity>
+                          ))}
+                        </ScrollView>
+                      )}
+                    </View>
+                  );
+                }}
                 onDayPress={(day: DateData) => {
                   setDob(day.dateString);
                   setShowDobPicker(false);
+                  setShowMonthMenu(false);
+                  setShowYearMenu(false);
                 }}
                 maxDate={new Date().toISOString().split("T")[0]}
+                markedDates={
+                  dob
+                    ? {
+                        [dob]: {
+                          selected: true,
+                          selectedColor: colors.primary,
+                        },
+                      }
+                    : undefined
+                }
                 theme={{
                   todayTextColor: colors.highlight,
                   arrowColor: colors.primary,
@@ -482,6 +605,84 @@ const styles = StyleSheet.create({
   modalClose: {
     color: colors.primary,
     fontWeight: "700",
+  },
+  dobHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 8,
+  },
+  dobArrowBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.highlight,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  dobArrowText: {
+    color: colors.white,
+    fontSize: 18,
+    fontWeight: "700",
+  },
+  dobHeaderCenter: {
+    flexDirection: "row",
+    gap: 8,
+    alignItems: "center",
+  },
+  dobHeaderChip: {
+    borderWidth: 1,
+    borderColor: colors.highlight,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  dobHeaderChipText: {
+    color: colors.white,
+    fontWeight: "700",
+  },
+  dobMonthGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginBottom: 8,
+  },
+  dobMonthCell: {
+    width: "22%",
+    borderWidth: 1,
+    borderColor: colors.highlight,
+    borderRadius: 8,
+    paddingVertical: 8,
+    alignItems: "center",
+  },
+  dobMonthCellActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  dobMonthCellText: {
+    color: colors.white,
+    fontWeight: "600",
+  },
+  dobYearList: {
+    maxHeight: 180,
+    borderWidth: 1,
+    borderColor: colors.highlight,
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  dobYearRow: {
+    paddingVertical: 8,
+    alignItems: "center",
+    borderBottomWidth: 1,
+    borderBottomColor: colors.highlight,
+  },
+  dobYearRowActive: {
+    backgroundColor: colors.primary,
+  },
+  dobYearText: {
+    color: colors.white,
+    fontWeight: "600",
   },
   centerBackdrop: {
     flex: 1,

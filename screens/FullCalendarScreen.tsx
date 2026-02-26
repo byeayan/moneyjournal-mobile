@@ -40,6 +40,8 @@ function parseLocalDateString(dateString: string) {
 export default function FullCalendarScreen({ route }: FullCalendarScreenProps) {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { fetchTransactionsByMonth, calendarTransactions } = useTransactionStore();
+  const isGoalsHydrated = useGoalsStore((state) => state.isHydrated);
+  const initializeGoals = useGoalsStore((state) => state.initializeGoals);
   const liabilities = useGoalsStore((state) => state.liabilities);
   const liabilityPayments = useGoalsStore((state) => state.liabilityPayments);
 
@@ -56,6 +58,12 @@ export default function FullCalendarScreen({ route }: FullCalendarScreenProps) {
   const loadMonth = useCallback(async () => {
     await fetchTransactionsByMonth(selectedDate);
   }, [fetchTransactionsByMonth, selectedDate]);
+
+  useEffect(() => {
+    if (!isGoalsHydrated) {
+      void initializeGoals();
+    }
+  }, [initializeGoals, isGoalsHydrated]);
 
   useEffect(() => {
     let active = true;

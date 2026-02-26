@@ -31,9 +31,10 @@ export default function DashboardScreen() {
   const {
     fetchTransactions,
     fetchTransactionsByMonth,
-    transactions,
     calendarTransactions,
   } = useTransactionStore();
+  const isGoalsHydrated = useGoalsStore((state) => state.isHydrated);
+  const initializeGoals = useGoalsStore((state) => state.initializeGoals);
   const liabilities = useGoalsStore((state) => state.liabilities);
   const liabilityPayments = useGoalsStore((state) => state.liabilityPayments);
 
@@ -48,6 +49,12 @@ export default function DashboardScreen() {
       fetchTransactionsByMonth(selectedDate),
     ]);
   }, [fetchTransactions, fetchTransactionsByMonth, selectedDate]);
+
+  useEffect(() => {
+    if (!isGoalsHydrated) {
+      void initializeGoals();
+    }
+  }, [initializeGoals, isGoalsHydrated]);
 
   useEffect(() => {
     let active = true;

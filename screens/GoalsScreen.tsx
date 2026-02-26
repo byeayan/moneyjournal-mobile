@@ -1,4 +1,3 @@
-import type { AppTabParamList } from '@/navigation/AppNavigator';
 import type { RootStackParamList } from '@/navigation/AppNavigator';
 import { useGoalsStore } from '@/store/goalsStore';
 import type { LiabilityType } from '@/types/goal';
@@ -6,7 +5,7 @@ import DropdownField from '@/components/common/DropdownField';
 import colors from '@/utils/colors';
 import { subscribeTabDoublePress } from '@/utils/tabDoublePressBus';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -21,6 +20,8 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { GestureHandlerRootView, Swipeable } from 'react-native-gesture-handler';
+import Svg, { Circle } from 'react-native-svg';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 function formatCurrency(value: number) {
@@ -54,6 +55,22 @@ function monthKeyToDate(monthKey: string, dayOfMonth: number) {
   const monthEndDay = new Date(safeYear, safeMonth + 1, 0).getDate();
   const safeDay = Math.max(1, Math.min(dayOfMonth, monthEndDay));
   return new Date(safeYear, safeMonth, safeDay);
+}
+function toDateGroupKey(value: string) {
+  const date = new Date(value);
+  return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+}
+function toDateGroupHeader(dateKey: string) {
+  const [year, month, day] = dateKey.split('-').map(Number);
+  const date = new Date(year, month, day);
+  const today = new Date();
+  const todayKey = `${today.getFullYear()}-${today.getMonth()}-${today.getDate()}`;
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  const yesterdayKey = `${yesterday.getFullYear()}-${yesterday.getMonth()}-${yesterday.getDate()}`;
+  if (dateKey === todayKey) return 'Today';
+  if (dateKey === yesterdayKey) return 'Yesterday';
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
 const LIABILITY_TYPE_OPTIONS = ['Debt', 'EMI'] as const;
@@ -119,6 +136,8 @@ export default function GoalsScreen() {
   const [paymentMonthKey, setPaymentMonthKey] = useState(toMonthKey());
   const [historyModalVisible, setHistoryModalVisible] = useState(false);
   const [historyType, setHistoryType] = useState<'savings' | 'liability'>('savings');
+  const [showAllGoalEntries, setShowAllGoalEntries] = useState(false);
+  const [dismissedRecentGoalEntryIds, setDismissedRecentGoalEntryIds] = useState<string[]>([]);
   const [feedback, setFeedback] = useState<{ visible: boolean; title: string; message: string }>({
     visible: false,
     title: '',
@@ -225,6 +244,12 @@ export default function GoalsScreen() {
   const completedGoals = useMemo(() => goals.filter((item) => item.status === 'completed'), [goals]);
 
   const assetsPct = totalSaved + totalLiabilityRemaining > 0 ? (totalSaved / (totalSaved + totalLiabilityRemaining)) * 100 : 0;
+  const savingRingSize = 190;
+  const savingRingStroke = 12;
+  const savingRingRadius = (savingRingSize - savingRingStroke) / 2;
+  const savingRingCircumference = 2 * Math.PI * savingRingRadius;
+  const savingRingProgress = Math.max(0, Math.min(progressPct, 100));
+  const savingRingOffset = savingRingCircumference * (1 - savingRingProgress / 100);
 
   const openAddSavings = (goalId: string) => {
     setSelectedGoalId(goalId);
@@ -311,10 +336,6 @@ export default function GoalsScreen() {
     const dueDateStart = new Date(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate());
     return todayStart.getTime() >= dueDateStart.getTime();
   }, [activeRent, activeRentDueAmount, activeRentDueMonthKey]);
-  const currentEmiDue = useMemo(() => {
-    if (!selectedLiability || selectedLiability.type !== 'emi') return 0;
-    return getEmiDueForMonth(selectedLiability.id, currentMonthKey);
-  }, [currentMonthKey, getEmiDueForMonth, selectedLiability]);
   const liabilityTotalNumber = Number(liabilityTotal);
   const liabilityMonthlyNumber = Number(liabilityMonthly);
   const estimatedEmiMonths =
@@ -334,6 +355,42 @@ export default function GoalsScreen() {
   const isSavingsAddExceeding =
     !!selectedGoal && Number.isFinite(enteredSavingsAmount) && enteredSavingsAmount > selectedGoalRemaining;
   const recentGoalEntries = useMemo(() => goalEntries.slice(0, 5), [goalEntries]);
+  const goalEntryRows = useMemo(
+    () =>
+      [...goalEntries]
+        .filter((entry) => !dismissedRecentGoalEntryIds.includes(entry.id))
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+        .map((entry) => {
+          const goal = goals.find((item) => item.id === entry.goalId);
+          return {
+            id: entry.id,
+            title: goal?.title || 'Goal',
+            kind: entry.kind,
+            amount: entry.amount,
+            createdAt: entry.createdAt,
+          };
+        }),
+    [dismissedRecentGoalEntryIds, goalEntries, goals]
+  );
+  const displayedGoalRows = useMemo(
+    () => (showAllGoalEntries ? goalEntryRows : goalEntryRows.slice(0, 3)),
+    [goalEntryRows, showAllGoalEntries]
+  );
+  const groupedGoalRows = useMemo(() => {
+    const groups: Record<string, typeof displayedGoalRows> = {};
+    displayedGoalRows.forEach((row) => {
+      const key = toDateGroupKey(row.createdAt);
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(row);
+    });
+    return Object.keys(groups)
+      .sort((a, b) => {
+        const [ay, am, ad] = a.split('-').map(Number);
+        const [by, bm, bd] = b.split('-').map(Number);
+        return new Date(by, bm, bd).getTime() - new Date(ay, am, ad).getTime();
+      })
+      .map((key) => ({ key, header: toDateGroupHeader(key), items: groups[key] }));
+  }, [displayedGoalRows]);
   const recentLiabilityPayments = useMemo(() => liabilityPayments.slice(0, 5), [liabilityPayments]);
   const showFeedback = (title: string, message: string) => setFeedback({ visible: true, title, message });
   const showToast = (message: string) => setToast({ visible: true, message });
@@ -402,15 +459,18 @@ export default function GoalsScreen() {
 
   if (!isHydrated) {
     return (
-      <SafeAreaView style={styles.safe} edges={['top']}>
-        <View style={styles.loaderWrap}>
-          <ActivityIndicator color={colors.primary} />
-        </View>
-      </SafeAreaView>
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <SafeAreaView style={styles.safe} edges={['top']}>
+          <View style={styles.loaderWrap}>
+            <ActivityIndicator color={colors.primary} />
+          </View>
+        </SafeAreaView>
+      </GestureHandlerRootView>
     );
   }
 
   return (
+    <GestureHandlerRootView style={{ flex: 1 }}>
     <SafeAreaView style={styles.safe} edges={['top']}>
       <ScrollView
         ref={scrollRef}
@@ -468,6 +528,28 @@ export default function GoalsScreen() {
         <View style={styles.ringCard}>
           <View style={styles.ringWrap}>
             <View style={styles.ringOuter}>
+              <Svg width={savingRingSize} height={savingRingSize} style={styles.ringSvg}>
+                <Circle
+                  cx={savingRingSize / 2}
+                  cy={savingRingSize / 2}
+                  r={savingRingRadius}
+                  stroke="rgba(216,223,238,0.28)"
+                  strokeWidth={savingRingStroke}
+                  fill="transparent"
+                />
+                <Circle
+                  cx={savingRingSize / 2}
+                  cy={savingRingSize / 2}
+                  r={savingRingRadius}
+                  stroke="#1BE39A"
+                  strokeWidth={savingRingStroke}
+                  strokeLinecap="round"
+                  fill="transparent"
+                  strokeDasharray={`${savingRingCircumference} ${savingRingCircumference}`}
+                  strokeDashoffset={savingRingOffset}
+                  transform={`rotate(-90 ${savingRingSize / 2} ${savingRingSize / 2})`}
+                />
+              </Svg>
               <View style={styles.ringInner}>
                 <Text style={styles.ringLabel}>TOTAL SAVINGS</Text>
                 <Text style={styles.ringValue}>{progressPct}%</Text>
@@ -555,16 +637,61 @@ export default function GoalsScreen() {
             <Text style={styles.emptyActiveText}>Use the + button above to create your first goal.</Text>
           </View>
         )}
-        <TouchableOpacity
-          style={styles.historyOpenButton}
-          onPress={() => {
-            setHistoryType('savings');
-            setHistoryModalVisible(true);
-          }}
-        >
-          <Ionicons name="time-outline" size={16} color={colors.white} />
-          <Text style={styles.historyOpenButtonText}>View Recent Savings Activity</Text>
-        </TouchableOpacity>
+        <View style={styles.transactionsContainer}>
+          <View style={styles.transactionsHeader}>
+            <View style={styles.sectionTitleRow}>
+              <Ionicons name="time-outline" size={18} color={colors.light} />
+              <Text style={styles.recentHeaderTitle}>Recent Savings Activity</Text>
+            </View>
+            <TouchableOpacity style={styles.viewAllToggle} onPress={() => setShowAllGoalEntries((prev) => !prev)}>
+              <Text style={styles.viewDayText}>{showAllGoalEntries ? 'Hide' : 'View All'}</Text>
+              <Ionicons
+                name={showAllGoalEntries ? 'chevron-up' : 'chevron-down'}
+                size={16}
+                color={colors.highlight}
+              />
+            </TouchableOpacity>
+          </View>
+          {groupedGoalRows.length === 0 ? (
+            <Text style={styles.recentEmptyText}>No savings activity yet.</Text>
+          ) : (
+            groupedGoalRows.map((group) => (
+              <View key={group.key} style={styles.recentGroup}>
+                <Text style={styles.recentGroupHeader}>{group.header}</Text>
+                {group.items.map((row) => (
+                  <Swipeable
+                    key={row.id}
+                    overshootRight={false}
+                    renderRightActions={() => (
+                      <TouchableOpacity
+                        style={styles.recentRemoveAction}
+                        onPress={() =>
+                          setDismissedRecentGoalEntryIds((prev) => (prev.includes(row.id) ? prev : [...prev, row.id]))
+                        }
+                      >
+                        <Ionicons name="trash-outline" size={16} color={colors.white} />
+                        <Text style={styles.recentRemoveText}>Remove</Text>
+                      </TouchableOpacity>
+                    )}
+                  >
+                    <View style={styles.recentItemCard}>
+                      <View style={styles.recentItemRow}>
+                        <Text style={styles.recentItemTitle}>{row.title}</Text>
+                        <Text style={[styles.recentItemAmount, row.kind === 'deposit' ? styles.amountPositive : styles.amountNegative]}>
+                          {row.kind === 'deposit' ? '+Rs ' : '-Rs '}
+                          {formatCurrency(row.amount)}
+                        </Text>
+                      </View>
+                      <Text style={styles.recentItemMeta}>
+                        Type: {row.kind === 'deposit' ? 'Savings Added' : 'Savings Withdrawn'}
+                      </Text>
+                    </View>
+                  </Swipeable>
+                ))}
+              </View>
+            ))
+          )}
+        </View>
           </>
         )}
 
@@ -1294,6 +1421,7 @@ export default function GoalsScreen() {
         </View>
       )}
     </SafeAreaView>
+    </GestureHandlerRootView>
   );
 }
 
@@ -1378,15 +1506,24 @@ const styles = StyleSheet.create({
     width: 190,
     height: 190,
     borderRadius: 95,
-    borderWidth: 9,
-    borderColor: '#D8DFEE',
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: 'transparent',
+  },
+  ringSvg: {
+    position: 'absolute',
   },
   liabilityRingOuter: {
     borderColor: '#F2D9D9',
   },
-  ringInner: { alignItems: 'center' },
+  ringInner: {
+    width: 146,
+    height: 146,
+    borderRadius: 73,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+  },
   ringLabel: { color: colors.light, fontSize: 12, lineHeight: 16, letterSpacing: 1, fontWeight: '700' },
   ringValue: { color: colors.white, fontSize: 34, lineHeight: 40, fontWeight: '900' },
   ringAmount: { color: colors.white, fontSize: 18, lineHeight: 24, fontWeight: '700' },
@@ -1601,6 +1738,98 @@ const styles = StyleSheet.create({
     color: '#F3A0B3',
     fontSize: 10,
     lineHeight: 14,
+    fontWeight: '700',
+  },
+  transactionsContainer: { marginTop: 14, marginBottom: 20 },
+  sectionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  transactionsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  recentHeaderTitle: {
+    color: colors.white,
+    fontSize: 20,
+    lineHeight: 26,
+    fontWeight: '800',
+  },
+  viewDayText: {
+    color: colors.highlight,
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  viewAllToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  recentEmptyText: {
+    color: colors.light,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  recentGroup: {
+    marginBottom: 8,
+  },
+  recentGroupHeader: {
+    color: colors.light,
+    fontSize: 13,
+    fontWeight: '700',
+    marginBottom: 8,
+    marginTop: 2,
+  },
+  recentItemCard: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.highlight,
+    padding: 14,
+    borderRadius: 10,
+    marginBottom: 10,
+  },
+  recentItemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  recentItemTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.white,
+    flex: 1,
+    marginRight: 12,
+  },
+  recentItemAmount: {
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  amountPositive: {
+    color: '#7FF2C6',
+  },
+  amountNegative: {
+    color: '#F3A0B3',
+  },
+  recentItemMeta: {
+    color: colors.light,
+    fontSize: 12,
+    marginTop: 5,
+  },
+  recentRemoveAction: {
+    width: 92,
+    marginBottom: 10,
+    borderRadius: 10,
+    backgroundColor: '#8b1e2f',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  recentRemoveText: {
+    color: colors.white,
+    fontSize: 12,
     fontWeight: '700',
   },
   modalBackdrop: {

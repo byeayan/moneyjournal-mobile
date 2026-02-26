@@ -3,6 +3,22 @@ import { Transaction, TransactionMetrics } from '@/types/transaction';
 import { create } from 'zustand';
 import { useAuthStore } from './authStore';
 
+async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs = 10000) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error('Request timed out. Please check your internet connection and try again.');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 function toLocalDateKey(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(
     date.getDate()
@@ -37,6 +53,14 @@ function extractErrorMessage(body: any, fallback: string) {
   return fallback;
 }
 
+function extractTransactionList(body: any): any[] {
+  if (Array.isArray(body)) return body;
+  if (Array.isArray(body?.items)) return body.items;
+  if (Array.isArray(body?.transactions)) return body.transactions;
+  if (Array.isArray(body?.data)) return body.data;
+  return [];
+}
+
 let latestDayFetchRequestId = 0;
 let latestMonthFetchRequestId = 0;
 
@@ -67,7 +91,7 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
 
       const token = await useAuthStore.getState().requireValidToken();
 
-      const response = await fetch(`${API_BASE_URL}/transactions`, {
+      const response = await fetchWithTimeout(`${API_BASE_URL}/transactions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -76,13 +100,13 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
         body: JSON.stringify(transaction),
       });
 
-      const responseData = await response.json();
+      const responseData = await readResponseBody(response);
 
       if (!response.ok) {
-        throw new Error(responseData.message || 'Failed to add transaction.');
+        throw new Error(extractErrorMessage(responseData, 'Failed to add transaction.'));
       }
 
-      const createdTransaction = normalizeTransaction(responseData.transaction);
+      const createdTransaction = normalizeTransaction((responseData as any)?.transaction ?? responseData);
 
       set((state) => ({
         transactions: [createdTransaction, ...state.transactions],
@@ -103,7 +127,7 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
   updateTransaction: async (id, payload) => {
     const token = await useAuthStore.getState().requireValidToken();
 
-    const response = await fetch(`${API_BASE_URL}/transactions/${id}`, {
+    const response = await fetchWithTimeout(`${API_BASE_URL}/transactions/${id}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
@@ -132,7 +156,7 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
   deleteTransaction: async (id) => {
     const token = await useAuthStore.getState().requireValidToken();
 
-    const response = await fetch(`${API_BASE_URL}/transactions/${id}`, {
+    const response = await fetchWithTimeout(`${API_BASE_URL}/transactions/${id}`, {
       method: 'DELETE',
       headers: {
         'Content-Type': 'application/json',
@@ -159,7 +183,7 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
 
     const day = toLocalDateKey(new Date(date));
 
-    const response = await fetch(`${API_BASE_URL}/transactions?date=${day}`, {
+    const response = await fetchWithTimeout(`${API_BASE_URL}/transactions?date=${day}`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
@@ -167,13 +191,13 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
       },
     });
 
-    const data = await response.json();
+    const data = await readResponseBody(response);
     if (response.ok) {
       if (requestId !== latestDayFetchRequestId) return;
-      const normalized = Array.isArray(data) ? data.map(normalizeTransaction) : [];
+      const normalized = extractTransactionList(data).map(normalizeTransaction);
       set({ transactions: normalized });
     } else {
-      throw new Error(data.message || 'Fetching transactions failed');
+      throw new Error(extractErrorMessage(data, 'Fetching transactions failed'));
     }
   },
 
@@ -185,24 +209,21 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
     const month = d.getMonth() + 1;
     const year = d.getFullYear();
 
-    const response = await fetch(
-      `${API_BASE_URL}/transactions?month=${month}&year=${year}`,
-      {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-      }
-    );
+    const response = await fetchWithTimeout(`${API_BASE_URL}/transactions?month=${month}&year=${year}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    });
 
-    const data = await response.json();
+    const data = await readResponseBody(response);
     if (response.ok) {
       if (requestId !== latestMonthFetchRequestId) return;
-      const normalized = Array.isArray(data) ? data.map(normalizeTransaction) : [];
+      const normalized = extractTransactionList(data).map(normalizeTransaction);
       set({ calendarTransactions: normalized });
     } else {
-      throw new Error(data.message || 'Fetching monthly transactions failed');
+      throw new Error(extractErrorMessage(data, 'Fetching monthly transactions failed'));
     }
   },
 
@@ -213,30 +234,27 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
     const month = d.getMonth() + 1;
     const year = d.getFullYear();
 
-    const response = await fetch(
-      `${API_BASE_URL}/transactions?month=${month}&year=${year}`,
-      {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-      }
-    );
+    const response = await fetchWithTimeout(`${API_BASE_URL}/transactions?month=${month}&year=${year}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    });
 
-    const data = await response.json();
+    const data = await readResponseBody(response);
     if (response.ok) {
-      return Array.isArray(data) ? data.map(normalizeTransaction) : [];
+      return extractTransactionList(data).map(normalizeTransaction);
     }
 
-    throw new Error(data.message || 'Fetching monthly transactions failed');
+    throw new Error(extractErrorMessage(data, 'Fetching monthly transactions failed'));
   },
 
   getTransactionMetrics: async () => {
     try {
       const token = await useAuthStore.getState().requireValidToken();
 
-      const response = await fetch(`${API_BASE_URL}/transactions/metrics`, {
+      const response = await fetchWithTimeout(`${API_BASE_URL}/transactions/metrics`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -244,13 +262,17 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
         },
       });
 
-      const data = await response.json();
+      const data = await readResponseBody(response);
 
       if (!response.ok) {
-        throw new Error(data.message || 'Failed to fetch transaction metrics');
+        throw new Error(extractErrorMessage(data, 'Failed to fetch transaction metrics'));
       }
-      set({ transactionMetrics: data });
-      return data;
+      const metrics = {
+        monthlyIncome: Number((data as any)?.monthlyIncome ?? 0),
+        monthlyExpense: Number((data as any)?.monthlyExpense ?? 0),
+      };
+      set({ transactionMetrics: metrics });
+      return metrics;
     } catch (error) {
       console.error('Error fetching transaction metrics:', error);
       throw error;

@@ -28,6 +28,32 @@ const MUTED_EXPENSE = '#8D71D7';
 const MUTED_PRIMARY = '#A783F4';
 const MUTED_PRIMARY_FILL = 'rgba(167, 131, 244, 0.22)';
 
+async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs = 10000) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error('Request timed out while loading analytics.');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+async function readResponseBody(response: Response) {
+  const text = await response.text();
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { message: text };
+  }
+}
+
 function normalizeTransaction(raw: any): Transaction {
   return {
     id: raw?.id ?? raw?._id ?? `${Date.now()}-${Math.random()}`,
@@ -43,6 +69,7 @@ function normalizeTransaction(raw: any): Transaction {
 
 function extractTransactions(payload: any): any[] {
   if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.items)) return payload.items;
   if (Array.isArray(payload?.transactions)) return payload.transactions;
   if (Array.isArray(payload?.data)) return payload.data;
   return [];
@@ -245,37 +272,27 @@ export default function AnalyticsScreen() {
         Authorization: `Bearer ${authToken}`,
       };
 
-      let merged: Transaction[] = [];
-      let fetched = false;
+      const pageSize = 200;
+      const pageCap = 25;
+      let page = 1;
+      let totalPages = 1;
+      const merged: Transaction[] = [];
 
-      const allResponse = await fetch(`${API_BASE_URL}/transactions`, { method: 'GET', headers });
-      const allData = await allResponse.json();
-
-      if (allResponse.ok) {
-        const raw = extractTransactions(allData);
-        if (raw.length > 0) {
-          merged = raw.map(normalizeTransaction);
-          fetched = true;
-        }
-      }
-
-      if (!fetched) {
-        const now = new Date();
-        const monthlyResults = await Promise.all(
-          Array.from({ length: 12 }).map(async (_, idx) => {
-            const d = new Date(now.getFullYear(), now.getMonth() - idx, 1);
-            const month = d.getMonth() + 1;
-            const year = d.getFullYear();
-            const resp = await fetch(`${API_BASE_URL}/transactions?month=${month}&year=${year}`, {
-              method: 'GET',
-              headers,
-            });
-            const payload = await resp.json();
-            if (!resp.ok) return [];
-            return extractTransactions(payload).map(normalizeTransaction);
-          })
+      while (page <= totalPages && page <= pageCap) {
+        const response = await fetchWithTimeout(
+          `${API_BASE_URL}/transactions?page=${page}&limit=${pageSize}`,
+          { method: 'GET', headers }
         );
-        merged = monthlyResults.flat();
+        const data = await readResponseBody(response);
+        if (!response.ok) {
+          throw new Error((data as any)?.message || 'Failed to load analytics data');
+        }
+
+        const raw = extractTransactions(data);
+        merged.push(...raw.map(normalizeTransaction));
+        totalPages = Number((data as any)?.pagination?.totalPages ?? 1);
+        if (raw.length === 0) break;
+        page += 1;
       }
 
       setAllTransactions(dedupeTransactions(merged));

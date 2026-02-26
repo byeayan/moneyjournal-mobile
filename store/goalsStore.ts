@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useAuthStore } from '@/store/authStore';
 import { create } from 'zustand';
 import type {
   GoalSavingsEntry,
@@ -8,10 +9,10 @@ import type {
   SavingsGoal,
 } from '@/types/goal';
 
-const GOALS_KEY = 'savings_goals_v1';
-const LIABILITIES_KEY = 'liabilities_v1';
-const GOAL_ENTRIES_KEY = 'goal_savings_entries_v1';
-const LIABILITY_PAYMENTS_KEY = 'liability_payments_v1';
+const GOALS_KEY_PREFIX = 'savings_goals_v2';
+const LIABILITIES_KEY_PREFIX = 'liabilities_v2';
+const GOAL_ENTRIES_KEY_PREFIX = 'goal_savings_entries_v2';
+const LIABILITY_PAYMENTS_KEY_PREFIX = 'liability_payments_v2';
 
 function toMonthKey(date = new Date()) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
@@ -19,6 +20,10 @@ function toMonthKey(date = new Date()) {
 
 function clampNumber(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
+}
+
+function roundCurrency(value: number) {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
 function addMonths(monthKey: string, delta: number) {
@@ -43,51 +48,56 @@ function getCompletedAt(
   return null;
 }
 
-const starterGoals: SavingsGoal[] = [
-  {
-    id: 'goal-emergency-fund',
-    title: 'Emergency Fund',
-    targetAmount: 50000,
-    savedAmount: 32500,
-    status: 'active',
-    createdAt: new Date().toISOString(),
-    completedAt: null,
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    id: 'goal-new-camera',
-    title: 'New Camera',
-    targetAmount: 85000,
-    savedAmount: 21000,
-    status: 'active',
-    createdAt: new Date().toISOString(),
-    completedAt: null,
-    updatedAt: new Date().toISOString(),
-  },
-];
+interface GoalStorageKeys {
+  goals: string;
+  liabilities: string;
+  goalEntries: string;
+  liabilityPayments: string;
+}
 
-const starterLiabilities: LiabilityItem[] = [
-  {
-    id: 'liability-bike-loan',
-    title: 'Bike Loan',
-    totalAmount: 120000,
-    remainingAmount: 45000,
-    monthlyPayment: 2500,
-    type: 'emi',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    id: 'liability-house-rent',
-    title: 'House Rent',
-    totalAmount: 0,
-    remainingAmount: 0,
-    monthlyPayment: 20000,
-    type: 'rent',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-];
+interface GoalStorageSnapshot {
+  goals: SavingsGoal[];
+  liabilities: LiabilityItem[];
+  goalEntries: GoalSavingsEntry[];
+  liabilityPayments: LiabilityPaymentEntry[];
+}
+
+function resolveCurrentUserKey() {
+  const user = useAuthStore.getState().user;
+  const rawKey =
+    user?.id ??
+    user?._id ??
+    (typeof user?.email === 'string' ? user.email.trim().toLowerCase() : '');
+  return rawKey ? String(rawKey) : 'guest';
+}
+
+function buildStorageKeys(userKey: string): GoalStorageKeys {
+  return {
+    goals: `${GOALS_KEY_PREFIX}:${userKey}`,
+    liabilities: `${LIABILITIES_KEY_PREFIX}:${userKey}`,
+    goalEntries: `${GOAL_ENTRIES_KEY_PREFIX}:${userKey}`,
+    liabilityPayments: `${LIABILITY_PAYMENTS_KEY_PREFIX}:${userKey}`,
+  };
+}
+
+function getEmptySnapshot(): GoalStorageSnapshot {
+  return {
+    goals: [],
+    liabilities: [],
+    goalEntries: [],
+    liabilityPayments: [],
+  };
+}
+
+async function persistSnapshot(userKey: string, snapshot: GoalStorageSnapshot) {
+  const keys = buildStorageKeys(userKey);
+  await AsyncStorage.multiSet([
+    [keys.goals, JSON.stringify(snapshot.goals)],
+    [keys.liabilities, JSON.stringify(snapshot.liabilities)],
+    [keys.goalEntries, JSON.stringify(snapshot.goalEntries)],
+    [keys.liabilityPayments, JSON.stringify(snapshot.liabilityPayments)],
+  ]);
+}
 
 interface AddGoalPayload {
   title: string;
@@ -108,6 +118,7 @@ interface GoalsState {
   liabilities: LiabilityItem[];
   goalEntries: GoalSavingsEntry[];
   liabilityPayments: LiabilityPaymentEntry[];
+  activeUserKey: string | null;
   isHydrated: boolean;
   initializeGoals: () => Promise<void>;
   addGoal: (payload: AddGoalPayload) => Promise<void>;
@@ -130,23 +141,32 @@ export const useGoalsStore = create<GoalsState>((set, get) => ({
   liabilities: [],
   goalEntries: [],
   liabilityPayments: [],
+  activeUserKey: null,
   isHydrated: false,
 
   initializeGoals: async () => {
+    const currentUserKey = resolveCurrentUserKey();
+    if (get().isHydrated && get().activeUserKey === currentUserKey) {
+      return;
+    }
+
+    set({ isHydrated: false });
+
     try {
+      const keys = buildStorageKeys(currentUserKey);
       const [rawGoals, rawLiabilities, rawGoalEntries, rawLiabilityPayments] = await Promise.all([
-        AsyncStorage.getItem(GOALS_KEY),
-        AsyncStorage.getItem(LIABILITIES_KEY),
-        AsyncStorage.getItem(GOAL_ENTRIES_KEY),
-        AsyncStorage.getItem(LIABILITY_PAYMENTS_KEY),
+        AsyncStorage.getItem(keys.goals),
+        AsyncStorage.getItem(keys.liabilities),
+        AsyncStorage.getItem(keys.goalEntries),
+        AsyncStorage.getItem(keys.liabilityPayments),
       ]);
 
-      const parsedGoals = rawGoals ? JSON.parse(rawGoals) : starterGoals;
-      const parsedLiabilities = rawLiabilities ? JSON.parse(rawLiabilities) : starterLiabilities;
+      const parsedGoals = rawGoals ? JSON.parse(rawGoals) : [];
+      const parsedLiabilities = rawLiabilities ? JSON.parse(rawLiabilities) : [];
       const parsedGoalEntries = rawGoalEntries ? JSON.parse(rawGoalEntries) : [];
       const parsedLiabilityPayments = rawLiabilityPayments ? JSON.parse(rawLiabilityPayments) : [];
 
-      const normalizedGoals = (Array.isArray(parsedGoals) ? parsedGoals : starterGoals).map((goal) => {
+      const normalizedGoals = (Array.isArray(parsedGoals) ? parsedGoals : []).map((goal) => {
         const saved = Number(goal?.savedAmount ?? 0);
         const target = Number(goal?.targetAmount ?? 0);
         const status = getGoalStatus(saved, target);
@@ -161,23 +181,24 @@ export const useGoalsStore = create<GoalsState>((set, get) => ({
 
       set({
         goals: normalizedGoals,
-        liabilities: Array.isArray(parsedLiabilities) ? parsedLiabilities : starterLiabilities,
+        liabilities: Array.isArray(parsedLiabilities) ? parsedLiabilities : [],
         goalEntries: Array.isArray(parsedGoalEntries) ? parsedGoalEntries : [],
         liabilityPayments: Array.isArray(parsedLiabilityPayments) ? parsedLiabilityPayments : [],
+        activeUserKey: currentUserKey,
         isHydrated: true,
       });
     } catch {
+      const empty = getEmptySnapshot();
       set({
-        goals: starterGoals,
-        liabilities: starterLiabilities,
-        goalEntries: [],
-        liabilityPayments: [],
+        ...empty,
+        activeUserKey: currentUserKey,
         isHydrated: true,
       });
     }
   },
 
   addGoal: async ({ title, targetAmount, savedAmount = 0 }) => {
+    await get().initializeGoals();
     const now = new Date().toISOString();
     const normalizedTitle = title.trim();
     const clampedSaved = clampNumber(savedAmount, 0, targetAmount);
@@ -194,7 +215,13 @@ export const useGoalsStore = create<GoalsState>((set, get) => ({
 
     const nextGoals = [next, ...get().goals];
     set({ goals: nextGoals });
-    await AsyncStorage.setItem(GOALS_KEY, JSON.stringify(nextGoals));
+    const userKey = get().activeUserKey ?? resolveCurrentUserKey();
+    await persistSnapshot(userKey, {
+      goals: nextGoals,
+      liabilities: get().liabilities,
+      goalEntries: get().goalEntries,
+      liabilityPayments: get().liabilityPayments,
+    });
 
     if (clampedSaved > 0) {
       const nextEntry: GoalSavingsEntry = {
@@ -206,11 +233,17 @@ export const useGoalsStore = create<GoalsState>((set, get) => ({
       };
       const nextEntries = [nextEntry, ...get().goalEntries];
       set({ goalEntries: nextEntries });
-      await AsyncStorage.setItem(GOAL_ENTRIES_KEY, JSON.stringify(nextEntries));
+      await persistSnapshot(userKey, {
+        goals: get().goals,
+        liabilities: get().liabilities,
+        goalEntries: nextEntries,
+        liabilityPayments: get().liabilityPayments,
+      });
     }
   },
 
   updateGoal: async (goalId, payload) => {
+    await get().initializeGoals();
     const now = new Date().toISOString();
     const nextGoals = get().goals.map((goal) => {
       if (goal.id !== goalId) return goal;
@@ -229,20 +262,31 @@ export const useGoalsStore = create<GoalsState>((set, get) => ({
     });
 
     set({ goals: nextGoals });
-    await AsyncStorage.setItem(GOALS_KEY, JSON.stringify(nextGoals));
+    const userKey = get().activeUserKey ?? resolveCurrentUserKey();
+    await persistSnapshot(userKey, {
+      goals: nextGoals,
+      liabilities: get().liabilities,
+      goalEntries: get().goalEntries,
+      liabilityPayments: get().liabilityPayments,
+    });
   },
 
   deleteGoal: async (goalId) => {
+    await get().initializeGoals();
     const nextGoals = get().goals.filter((goal) => goal.id !== goalId);
     const nextEntries = get().goalEntries.filter((entry) => entry.goalId !== goalId);
     set({ goals: nextGoals, goalEntries: nextEntries });
-    await Promise.all([
-      AsyncStorage.setItem(GOALS_KEY, JSON.stringify(nextGoals)),
-      AsyncStorage.setItem(GOAL_ENTRIES_KEY, JSON.stringify(nextEntries)),
-    ]);
+    const userKey = get().activeUserKey ?? resolveCurrentUserKey();
+    await persistSnapshot(userKey, {
+      goals: nextGoals,
+      liabilities: get().liabilities,
+      goalEntries: nextEntries,
+      liabilityPayments: get().liabilityPayments,
+    });
   },
 
   addSavingsToGoal: async (goalId, amount) => {
+    await get().initializeGoals();
     const now = new Date().toISOString();
     const goal = get().goals.find((item) => item.id === goalId);
     if (!goal) throw new Error('Goal not found.');
@@ -276,13 +320,17 @@ export const useGoalsStore = create<GoalsState>((set, get) => ({
     const nextEntries = [nextEntry, ...get().goalEntries];
 
     set({ goals: nextGoals, goalEntries: nextEntries });
-    await Promise.all([
-      AsyncStorage.setItem(GOALS_KEY, JSON.stringify(nextGoals)),
-      AsyncStorage.setItem(GOAL_ENTRIES_KEY, JSON.stringify(nextEntries)),
-    ]);
+    const userKey = get().activeUserKey ?? resolveCurrentUserKey();
+    await persistSnapshot(userKey, {
+      goals: nextGoals,
+      liabilities: get().liabilities,
+      goalEntries: nextEntries,
+      liabilityPayments: get().liabilityPayments,
+    });
   },
 
   withdrawSavingsFromGoal: async (goalId, amount) => {
+    await get().initializeGoals();
     const now = new Date().toISOString();
     const goal = get().goals.find((item) => item.id === goalId);
     if (!goal) throw new Error('Goal not found.');
@@ -311,13 +359,17 @@ export const useGoalsStore = create<GoalsState>((set, get) => ({
     };
     const nextEntries = [nextEntry, ...get().goalEntries];
     set({ goals: nextGoals, goalEntries: nextEntries });
-    await Promise.all([
-      AsyncStorage.setItem(GOALS_KEY, JSON.stringify(nextGoals)),
-      AsyncStorage.setItem(GOAL_ENTRIES_KEY, JSON.stringify(nextEntries)),
-    ]);
+    const userKey = get().activeUserKey ?? resolveCurrentUserKey();
+    await persistSnapshot(userKey, {
+      goals: nextGoals,
+      liabilities: get().liabilities,
+      goalEntries: nextEntries,
+      liabilityPayments: get().liabilityPayments,
+    });
   },
 
   deleteGoalEntry: async (entryId) => {
+    await get().initializeGoals();
     const now = new Date().toISOString();
     const targetEntry = get().goalEntries.find((entry) => entry.id === entryId);
     if (!targetEntry) return;
@@ -343,13 +395,17 @@ export const useGoalsStore = create<GoalsState>((set, get) => ({
 
     const nextEntries = get().goalEntries.filter((entry) => entry.id !== entryId);
     set({ goals: nextGoals, goalEntries: nextEntries });
-    await Promise.all([
-      AsyncStorage.setItem(GOALS_KEY, JSON.stringify(nextGoals)),
-      AsyncStorage.setItem(GOAL_ENTRIES_KEY, JSON.stringify(nextEntries)),
-    ]);
+    const userKey = get().activeUserKey ?? resolveCurrentUserKey();
+    await persistSnapshot(userKey, {
+      goals: nextGoals,
+      liabilities: get().liabilities,
+      goalEntries: nextEntries,
+      liabilityPayments: get().liabilityPayments,
+    });
   },
 
   addLiability: async ({ title, totalAmount, remainingAmount, monthlyPayment, type }) => {
+    await get().initializeGoals();
     const now = new Date().toISOString();
     if (type === 'rent') {
       const hasRent = get().liabilities.some((item) => item.type === 'rent');
@@ -394,10 +450,17 @@ export const useGoalsStore = create<GoalsState>((set, get) => ({
 
     const nextLiabilities = [next, ...get().liabilities];
     set({ liabilities: nextLiabilities });
-    await AsyncStorage.setItem(LIABILITIES_KEY, JSON.stringify(nextLiabilities));
+    const userKey = get().activeUserKey ?? resolveCurrentUserKey();
+    await persistSnapshot(userKey, {
+      goals: get().goals,
+      liabilities: nextLiabilities,
+      goalEntries: get().goalEntries,
+      liabilityPayments: get().liabilityPayments,
+    });
   },
 
   updateLiability: async (liabilityId, payload) => {
+    await get().initializeGoals();
     const now = new Date().toISOString();
     const nextLiabilities = get().liabilities.map((item) => {
       if (item.id !== liabilityId) return item;
@@ -418,20 +481,31 @@ export const useGoalsStore = create<GoalsState>((set, get) => ({
     });
 
     set({ liabilities: nextLiabilities });
-    await AsyncStorage.setItem(LIABILITIES_KEY, JSON.stringify(nextLiabilities));
+    const userKey = get().activeUserKey ?? resolveCurrentUserKey();
+    await persistSnapshot(userKey, {
+      goals: get().goals,
+      liabilities: nextLiabilities,
+      goalEntries: get().goalEntries,
+      liabilityPayments: get().liabilityPayments,
+    });
   },
 
   deleteLiability: async (liabilityId) => {
+    await get().initializeGoals();
     const nextLiabilities = get().liabilities.filter((item) => item.id !== liabilityId);
     const nextPayments = get().liabilityPayments.filter((entry) => entry.liabilityId !== liabilityId);
     set({ liabilities: nextLiabilities, liabilityPayments: nextPayments });
-    await Promise.all([
-      AsyncStorage.setItem(LIABILITIES_KEY, JSON.stringify(nextLiabilities)),
-      AsyncStorage.setItem(LIABILITY_PAYMENTS_KEY, JSON.stringify(nextPayments)),
-    ]);
+    const userKey = get().activeUserKey ?? resolveCurrentUserKey();
+    await persistSnapshot(userKey, {
+      goals: get().goals,
+      liabilities: nextLiabilities,
+      goalEntries: get().goalEntries,
+      liabilityPayments: nextPayments,
+    });
   },
 
   makeLiabilityPayment: async (liabilityId, amount, monthKey) => {
+    await get().initializeGoals();
     const now = new Date().toISOString();
     const target = get().liabilities.find((item) => item.id === liabilityId);
     if (!target) return;
@@ -472,6 +546,7 @@ export const useGoalsStore = create<GoalsState>((set, get) => ({
       if (selectedMonthKey !== nextPayableMonth) {
         throw new Error(`Pay ${nextPayableMonth} EMI first before future months.`);
       }
+      appliedMonthKey = selectedMonthKey;
       const paidThisMonth = get()
         .liabilityPayments
         .filter((entry) => entry.liabilityId === liabilityId && entry.monthKey === selectedMonthKey)
@@ -510,7 +585,7 @@ export const useGoalsStore = create<GoalsState>((set, get) => ({
         .liabilityPayments
         .filter((entry) => entry.liabilityId === liabilityId && entry.monthKey === selectedMonthKey)
         .reduce((sum, entry) => sum + entry.amount, 0);
-      const dueThisMonth = Math.max(target.monthlyPayment - paidThisMonth, 0);
+      const dueThisMonth = Math.max(roundCurrency(target.monthlyPayment - paidThisMonth), 0);
       appliedAmount = Math.min(amount, dueThisMonth);
       appliedMonthKey = selectedMonthKey;
     }
@@ -521,19 +596,23 @@ export const useGoalsStore = create<GoalsState>((set, get) => ({
       id: `liability-payment-${Date.now()}`,
       liabilityId,
       amount: appliedAmount,
-      monthKey: target.type === 'emi' ? monthKey ?? toMonthKey() : target.type === 'rent' ? appliedMonthKey : toMonthKey(),
+      monthKey: target.type === 'emi' ? appliedMonthKey : target.type === 'rent' ? appliedMonthKey : toMonthKey(),
       createdAt: now,
     };
     const nextPayments = [payment, ...get().liabilityPayments];
 
     set({ liabilities: nextLiabilities, liabilityPayments: nextPayments });
-    await Promise.all([
-      AsyncStorage.setItem(LIABILITIES_KEY, JSON.stringify(nextLiabilities)),
-      AsyncStorage.setItem(LIABILITY_PAYMENTS_KEY, JSON.stringify(nextPayments)),
-    ]);
+    const userKey = get().activeUserKey ?? resolveCurrentUserKey();
+    await persistSnapshot(userKey, {
+      goals: get().goals,
+      liabilities: nextLiabilities,
+      goalEntries: get().goalEntries,
+      liabilityPayments: nextPayments,
+    });
   },
 
   deleteLiabilityPayment: async (paymentId) => {
+    await get().initializeGoals();
     const payment = get().liabilityPayments.find((entry) => entry.id === paymentId);
     if (!payment) return;
 
@@ -554,10 +633,13 @@ export const useGoalsStore = create<GoalsState>((set, get) => ({
 
     const nextPayments = get().liabilityPayments.filter((entry) => entry.id !== paymentId);
     set({ liabilities: nextLiabilities, liabilityPayments: nextPayments });
-    await Promise.all([
-      AsyncStorage.setItem(LIABILITIES_KEY, JSON.stringify(nextLiabilities)),
-      AsyncStorage.setItem(LIABILITY_PAYMENTS_KEY, JSON.stringify(nextPayments)),
-    ]);
+    const userKey = get().activeUserKey ?? resolveCurrentUserKey();
+    await persistSnapshot(userKey, {
+      goals: get().goals,
+      liabilities: nextLiabilities,
+      goalEntries: get().goalEntries,
+      liabilityPayments: nextPayments,
+    });
   },
 
   getRentDueForMonth: (liabilityId, monthKey = toMonthKey()) => {
@@ -567,7 +649,7 @@ export const useGoalsStore = create<GoalsState>((set, get) => ({
       .liabilityPayments
       .filter((entry) => entry.liabilityId === liabilityId && entry.monthKey === monthKey)
       .reduce((sum, entry) => sum + entry.amount, 0);
-    return Math.max(item.monthlyPayment - paid, 0);
+    return Math.max(roundCurrency(item.monthlyPayment - paid), 0);
   },
   getEmiDueForMonth: (liabilityId, monthKey = toMonthKey()) => {
     const item = get().liabilities.find((entry) => entry.id === liabilityId);
@@ -580,3 +662,27 @@ export const useGoalsStore = create<GoalsState>((set, get) => ({
     return Math.max(Math.min(item.monthlyPayment - paid, item.remainingAmount), 0);
   },
 }));
+
+useAuthStore.subscribe((state, prevState) => {
+  const nextUserKey =
+    state.user?.id ??
+    state.user?._id ??
+    (typeof state.user?.email === 'string' ? state.user.email.trim().toLowerCase() : '') ??
+    'guest';
+  const prevUserKey =
+    prevState.user?.id ??
+    prevState.user?._id ??
+    (typeof prevState.user?.email === 'string' ? prevState.user.email.trim().toLowerCase() : '') ??
+    'guest';
+
+  if (String(nextUserKey || 'guest') === String(prevUserKey || 'guest')) {
+    return;
+  }
+
+  const empty = getEmptySnapshot();
+  useGoalsStore.setState({
+    ...empty,
+    activeUserKey: null,
+    isHydrated: false,
+  });
+});

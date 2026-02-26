@@ -1,9 +1,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useAuthStore } from '@/store/authStore';
 import { create } from 'zustand';
 import type { BudgetLimit } from '@/types/budget';
 
-const BUDGET_LIMITS_KEY = 'budget_limits_v1';
-const BUDGET_TOTALS_KEY = 'budget_totals_v1';
+const BUDGET_LIMITS_KEY_PREFIX = 'budget_limits_v2';
+const BUDGET_TOTALS_KEY_PREFIX = 'budget_totals_v2';
 
 function toMonthKey(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
@@ -24,6 +25,7 @@ function toDisplayCategory(category: string) {
 interface BudgetState {
   budgets: BudgetLimit[];
   monthlyTotals: Record<string, number>;
+  activeUserKey: string | null;
   isHydrated: boolean;
   initializeBudgets: () => Promise<void>;
   setBudgetLimit: (month: string, category: string, amount: number) => Promise<void>;
@@ -33,16 +35,41 @@ interface BudgetState {
   getBudgetsByMonth: (month: string) => BudgetLimit[];
 }
 
+function resolveCurrentUserKey() {
+  const user = useAuthStore.getState().user;
+  const rawKey =
+    user?.id ??
+    user?._id ??
+    (typeof user?.email === 'string' ? user.email.trim().toLowerCase() : '');
+  return rawKey ? String(rawKey) : 'guest';
+}
+
+function buildBudgetStorageKeys(userKey: string) {
+  return {
+    limits: `${BUDGET_LIMITS_KEY_PREFIX}:${userKey}`,
+    totals: `${BUDGET_TOTALS_KEY_PREFIX}:${userKey}`,
+  };
+}
+
 export const useBudgetStore = create<BudgetState>((set, get) => ({
   budgets: [],
   monthlyTotals: {},
+  activeUserKey: null,
   isHydrated: false,
 
   initializeBudgets: async () => {
+    const currentUserKey = resolveCurrentUserKey();
+    if (get().isHydrated && get().activeUserKey === currentUserKey) {
+      return;
+    }
+
+    set({ isHydrated: false });
+
     try {
+      const keys = buildBudgetStorageKeys(currentUserKey);
       const [rawLimits, rawTotals] = await Promise.all([
-        AsyncStorage.getItem(BUDGET_LIMITS_KEY),
-        AsyncStorage.getItem(BUDGET_TOTALS_KEY),
+        AsyncStorage.getItem(keys.limits),
+        AsyncStorage.getItem(keys.totals),
       ]);
 
       const parsedLimits = rawLimits ? JSON.parse(rawLimits) : [];
@@ -54,14 +81,16 @@ export const useBudgetStore = create<BudgetState>((set, get) => ({
           parsedTotals && typeof parsedTotals === 'object' && !Array.isArray(parsedTotals)
             ? parsedTotals
             : {},
+        activeUserKey: currentUserKey,
         isHydrated: true,
       });
     } catch {
-      set({ isHydrated: true });
+      set({ budgets: [], monthlyTotals: {}, activeUserKey: currentUserKey, isHydrated: true });
     }
   },
 
   setBudgetLimit: async (month, category, amount) => {
+    await get().initializeBudgets();
     const normalizedCategory = normalizeCategory(category);
     const displayCategory = toDisplayCategory(category);
     const now = new Date().toISOString();
@@ -90,26 +119,55 @@ export const useBudgetStore = create<BudgetState>((set, get) => ({
     }
 
     set({ budgets: nextBudgets });
-    await AsyncStorage.setItem(BUDGET_LIMITS_KEY, JSON.stringify(nextBudgets));
+    const keys = buildBudgetStorageKeys(get().activeUserKey ?? resolveCurrentUserKey());
+    await AsyncStorage.setItem(keys.limits, JSON.stringify(nextBudgets));
   },
 
   setMonthlyTotal: async (month, amount) => {
+    await get().initializeBudgets();
     const nextTotals = { ...get().monthlyTotals, [month]: amount };
     set({ monthlyTotals: nextTotals });
-    await AsyncStorage.setItem(BUDGET_TOTALS_KEY, JSON.stringify(nextTotals));
+    const keys = buildBudgetStorageKeys(get().activeUserKey ?? resolveCurrentUserKey());
+    await AsyncStorage.setItem(keys.totals, JSON.stringify(nextTotals));
   },
 
   deleteBudgetLimit: async (month, category) => {
+    await get().initializeBudgets();
     const normalizedCategory = normalizeCategory(category);
     const nextBudgets = get().budgets.filter(
       (item) => !(item.month === month && normalizeCategory(item.category) === normalizedCategory)
     );
     set({ budgets: nextBudgets });
-    await AsyncStorage.setItem(BUDGET_LIMITS_KEY, JSON.stringify(nextBudgets));
+    const keys = buildBudgetStorageKeys(get().activeUserKey ?? resolveCurrentUserKey());
+    await AsyncStorage.setItem(keys.limits, JSON.stringify(nextBudgets));
   },
 
   getMonthlyTotal: (month) => get().monthlyTotals[month] ?? 0,
   getBudgetsByMonth: (month) => get().budgets.filter((item) => item.month === month),
 }));
+
+useAuthStore.subscribe((state, prevState) => {
+  const nextUserKey =
+    state.user?.id ??
+    state.user?._id ??
+    (typeof state.user?.email === 'string' ? state.user.email.trim().toLowerCase() : '') ??
+    'guest';
+  const prevUserKey =
+    prevState.user?.id ??
+    prevState.user?._id ??
+    (typeof prevState.user?.email === 'string' ? prevState.user.email.trim().toLowerCase() : '') ??
+    'guest';
+
+  if (String(nextUserKey || 'guest') === String(prevUserKey || 'guest')) {
+    return;
+  }
+
+  useBudgetStore.setState({
+    budgets: [],
+    monthlyTotals: {},
+    activeUserKey: null,
+    isHydrated: false,
+  });
+});
 
 export { toMonthKey };

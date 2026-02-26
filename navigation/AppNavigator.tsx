@@ -109,7 +109,7 @@ function AnimatedTabButton({
   );
 }
 
-function CustomTabBar({ state, descriptors, navigation, insets }: BottomTabBarProps) {
+function CustomTabBar({ state, navigation, insets }: BottomTabBarProps) {
   const bottomInset = Math.max(insets.bottom, 10);
   const lastTapByRoute = useRef<Record<string, number>>({});
   const activeX = useRef(new Animated.Value(0)).current;
@@ -217,7 +217,7 @@ function MainTabs() {
       initialRouteName="HomeTab"
       backBehavior="initialRoute"
       tabBar={(props) => <CustomTabBar {...props} />}
-      screenOptions={({ route }) => ({
+      screenOptions={() => ({
         headerShown: false,
         tabBarShowLabel: false,
       })}

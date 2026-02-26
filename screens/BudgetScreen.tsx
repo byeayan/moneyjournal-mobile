@@ -281,8 +281,13 @@ export default function BudgetScreen() {
       return;
     }
 
-    await setBudgetLimit(monthKey, budgetCategory, parsed);
-    setSetBudgetVisible(false);
+    try {
+      await setBudgetLimit(monthKey, budgetCategory, parsed);
+      setSetBudgetVisible(false);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to save budget.';
+      Alert.alert('Error', message);
+    }
   };
   const handleSaveTotalBudget = async () => {
     const parsed = Number(monthlyTotalAmount);
@@ -290,8 +295,13 @@ export default function BudgetScreen() {
       Alert.alert('Validation', 'Total budget amount must be greater than 0.');
       return;
     }
-    await setMonthlyTotal(monthKey, parsed);
-    setSetTotalVisible(false);
+    try {
+      await setMonthlyTotal(monthKey, parsed);
+      setSetTotalVisible(false);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to save total budget.';
+      Alert.alert('Error', message);
+    }
   };
 
   const segmentBase = totalBudget > 0 ? totalBudget : totalSpent;

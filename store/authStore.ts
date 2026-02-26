@@ -52,6 +52,16 @@ async function readErrorMessage(response: Response, fallback: string) {
   }
 }
 
+async function readResponseBody(response: Response) {
+  const text = await response.text();
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { message: text };
+  }
+}
+
 async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs = 10000) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -127,9 +137,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
       try {
         await get().fetchCurrentUser();
-      } catch {
-        await clearPersistedAuth();
-        set({ authToken: null, user: null, isLoggedIn: false });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '';
+        const shouldInvalidateSession =
+          message.includes('Session expired') ||
+          message.includes('No auth token') ||
+          message.toLowerCase().includes('not authorized');
+
+        if (shouldInvalidateSession) {
+          await clearPersistedAuth();
+          set({ authToken: null, user: null, isLoggedIn: false });
+        }
       }
     } finally {
       set({ isHydrated: true });
@@ -226,7 +244,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   fetchCurrentUser: async () => {
     const token = await get().requireValidToken();
 
-    const response = await fetch(`${API_BASE_URL}/users/current`, {
+    const response = await fetchWithTimeout(`${API_BASE_URL}/users/current`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
@@ -234,10 +252,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       },
     });
 
-    const data = await response.json();
+    const data = await readResponseBody(response);
 
     if (!response.ok) {
-      throw new Error(data.message || 'Failed to fetch profile');
+      throw new Error((data as any)?.message || 'Failed to fetch profile');
     }
 
     set({ user: data });
@@ -247,7 +265,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   updateCurrentUser: async (payload) => {
     const token = await get().requireValidToken();
 
-    const response = await fetch(`${API_BASE_URL}/users/current`, {
+    const response = await fetchWithTimeout(`${API_BASE_URL}/users/current`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
@@ -256,20 +274,20 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       body: JSON.stringify(payload),
     });
 
-    const data = await response.json();
+    const data = await readResponseBody(response);
 
     if (!response.ok) {
-      throw new Error(data.message || 'Failed to update profile');
+      throw new Error((data as any)?.message || 'Failed to update profile');
     }
 
-    set({ user: data.user });
-    await persistAuth(token, data.user);
+    set({ user: (data as any)?.user ?? data });
+    await persistAuth(token, (data as any)?.user ?? data);
   },
 
   deleteCurrentUser: async () => {
     const token = await get().requireValidToken();
 
-    const response = await fetch(`${API_BASE_URL}/users/current`, {
+    const response = await fetchWithTimeout(`${API_BASE_URL}/users/current`, {
       method: 'DELETE',
       headers: {
         'Content-Type': 'application/json',
@@ -277,10 +295,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       },
     });
 
-    const data = await response.json();
+    const data = await readResponseBody(response);
 
     if (!response.ok) {
-      throw new Error(data.message || 'Failed to delete account');
+      throw new Error((data as any)?.message || 'Failed to delete account');
     }
 
     set({ authToken: null, user: null, isLoggedIn: false });

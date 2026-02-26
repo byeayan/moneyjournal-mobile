@@ -1,15 +1,16 @@
-import type { AppTabParamList } from '@/navigation/AppNavigator';
 import type { RootStackParamList } from '@/navigation/AppNavigator';
 import { useGoalsStore } from '@/store/goalsStore';
-import type { LiabilityType } from '@/types/goal';
+import type { LiabilityItem, LiabilityType } from '@/types/goal';
 import DropdownField from '@/components/common/DropdownField';
 import colors from '@/utils/colors';
+import { formatCurrency, toDateGroupHeader, toDateGroupKey } from '@/utils/financeFormat';
 import { subscribeTabDoublePress } from '@/utils/tabDoublePressBus';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { GestureHandlerRootView, Swipeable } from 'react-native-gesture-handler';
+import Svg, { Circle } from 'react-native-svg';
 import {
   Alert,
   ActivityIndicator,
@@ -23,13 +24,6 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-
-function formatCurrency(value: number) {
-  return value.toLocaleString('en-IN', {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
-  });
-}
 
 function toMonthKey(date = new Date()) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
@@ -61,23 +55,6 @@ function monthKeyToLabel(monthKey: string) {
   const d = new Date(year || 1970, ((month || 1) - 1), 1);
   return d.toLocaleDateString('en-IN', { month: 'short', year: 'numeric' });
 }
-function toDateGroupKey(value: string) {
-  const date = new Date(value);
-  return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
-}
-function toDateGroupHeader(dateKey: string) {
-  const [year, month, day] = dateKey.split('-').map(Number);
-  const date = new Date(year, month, day);
-  const today = new Date();
-  const todayKey = `${today.getFullYear()}-${today.getMonth()}-${today.getDate()}`;
-  const yesterday = new Date(today);
-  yesterday.setDate(today.getDate() - 1);
-  const yesterdayKey = `${yesterday.getFullYear()}-${yesterday.getMonth()}-${yesterday.getDate()}`;
-  if (dateKey === todayKey) return 'Today';
-  if (dateKey === yesterdayKey) return 'Yesterday';
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-}
-
 const LIABILITY_TYPE_OPTIONS = ['Debt', 'EMI'] as const;
 
 function toLiabilityType(label: string): LiabilityType {
@@ -92,20 +69,13 @@ function toLiabilityTypeLabel(type: LiabilityType): string {
 }
 
 export default function LiabilitiesScreen() {
-  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();  const showGoalsSection = false;
-  const showLiabilitySection = true;
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const {
     goals,
     liabilities,
-    goalEntries,
     liabilityPayments,
     isHydrated,
     initializeGoals,
-    addGoal,
-    deleteGoal,
-    addSavingsToGoal,
-    withdrawSavingsFromGoal,
-    deleteGoalEntry,
     addLiability,
     deleteLiability,
     makeLiabilityPayment,
@@ -114,15 +84,9 @@ export default function LiabilitiesScreen() {
     getEmiDueForMonth,
   } = useGoalsStore();
 
-  const [goalModalVisible, setGoalModalVisible] = useState(false);
   const [liabilityModalVisible, setLiabilityModalVisible] = useState(false);
   const [rentModalVisible, setRentModalVisible] = useState(false);
-  const [savingsModalVisible, setSavingsModalVisible] = useState(false);
   const [paymentModalVisible, setPaymentModalVisible] = useState(false);
-
-  const [goalTitle, setGoalTitle] = useState('');
-  const [goalTarget, setGoalTarget] = useState('');
-  const [goalSaved, setGoalSaved] = useState('');
 
   const [liabilityTitle, setLiabilityTitle] = useState('');
   const [liabilityTotal, setLiabilityTotal] = useState('');
@@ -132,15 +96,10 @@ export default function LiabilitiesScreen() {
   const [rentTitle, setRentTitle] = useState('');
   const [rentMonthly, setRentMonthly] = useState('');
 
-  const [selectedGoalId, setSelectedGoalId] = useState<string | null>(null);
-  const [savingsAmount, setSavingsAmount] = useState('');
-  const [savingsMode, setSavingsMode] = useState<'add' | 'withdraw'>('add');
-
   const [selectedLiabilityId, setSelectedLiabilityId] = useState<string | null>(null);
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentMonthKey, setPaymentMonthKey] = useState(toMonthKey());
   const [historyModalVisible, setHistoryModalVisible] = useState(false);
-  const [historyType, setHistoryType] = useState<'savings' | 'liability'>('savings');
   const [feedback, setFeedback] = useState<{ visible: boolean; title: string; message: string }>({
     visible: false,
     title: '',
@@ -179,10 +138,9 @@ export default function LiabilitiesScreen() {
     }
   }, [liabilityType]);
 
-  const totalSaved = useMemo(() => goals.reduce((sum, item) => sum + item.savedAmount, 0), [goals]);
-  const totalTarget = useMemo(() => goals.reduce((sum, item) => sum + item.targetAmount, 0), [goals]);
   const monthKey = useMemo(() => toMonthKey(), []);
   const currentMonthKey = useMemo(() => toMonthKey(), []);
+  const totalSaved = useMemo(() => goals.reduce((sum, item) => sum + item.savedAmount, 0), [goals]);
   const totalLiabilityRemaining = useMemo(() => {
     return liabilities.reduce((sum, item) => {
       if (item.type !== 'rent') return sum + item.remainingAmount;
@@ -193,6 +151,11 @@ export default function LiabilitiesScreen() {
     () => liabilities.reduce((sum, item) => (item.type === 'debt' ? sum : sum + item.monthlyPayment), 0),
     [liabilities]
   );
+  const netWorth = totalSaved - totalLiabilityRemaining;
+  const assetsPct =
+    totalSaved + totalLiabilityRemaining > 0
+      ? (totalSaved / (totalSaved + totalLiabilityRemaining)) * 100
+      : 0;
   const liabilityPrincipalTotal = useMemo(
     () => liabilities.filter((item) => item.type !== 'rent').reduce((sum, item) => sum + item.totalAmount, 0),
     [liabilities]
@@ -225,6 +188,12 @@ export default function LiabilitiesScreen() {
     () => (liabilityTotalReference > 0 ? Math.round((liabilityPaidValue / liabilityTotalReference) * 100) : 0),
     [liabilityPaidValue, liabilityTotalReference]
   );
+  const liabilityRingSize = 190;
+  const liabilityRingStroke = 12;
+  const liabilityRingRadius = (liabilityRingSize - liabilityRingStroke) / 2;
+  const liabilityRingCircumference = 2 * Math.PI * liabilityRingRadius;
+  const liabilityRingProgress = Math.max(0, Math.min(liabilityProgressPct, 100));
+  const liabilityRingOffset = liabilityRingCircumference * (1 - liabilityRingProgress / 100);
   const activeLiabilityCount = useMemo(
     () => liabilities.filter((item) => item.type !== 'rent' && item.remainingAmount > 0).length,
     [liabilities]
@@ -242,21 +211,6 @@ export default function LiabilitiesScreen() {
   );
   const activeRent = useMemo(() => liabilities.find((item) => item.type === 'rent') ?? null, [liabilities]);
 
-  const netWorth = totalSaved - totalLiabilityRemaining;
-  const progressPct = totalTarget > 0 ? Math.round((totalSaved / totalTarget) * 100) : 0;
-
-  const activeGoals = useMemo(() => goals.filter((item) => item.status === 'active'), [goals]);
-  const completedGoals = useMemo(() => goals.filter((item) => item.status === 'completed'), [goals]);
-
-  const assetsPct = totalSaved + totalLiabilityRemaining > 0 ? (totalSaved / (totalSaved + totalLiabilityRemaining)) * 100 : 0;
-
-  const openAddSavings = (goalId: string) => {
-    setSelectedGoalId(goalId);
-    setSavingsAmount('');
-    setSavingsMode('add');
-    setSavingsModalVisible(true);
-  };
-
   const openLiabilityPayment = (liabilityId: string) => {
     setSelectedLiabilityId(liabilityId);
     setPaymentMonthKey(toMonthKey());
@@ -264,10 +218,6 @@ export default function LiabilitiesScreen() {
     setPaymentModalVisible(true);
   };
 
-  const selectedGoal = useMemo(
-    () => goals.find((item) => item.id === selectedGoalId) ?? null,
-    [goals, selectedGoalId]
-  );
   const selectedLiability = useMemo(
     () => liabilities.find((item) => item.id === selectedLiabilityId) ?? null,
     [liabilities, selectedLiabilityId]
@@ -302,11 +252,11 @@ export default function LiabilitiesScreen() {
       }
     }
     return currentMonthKey;
-  }, [currentMonthKey, getRentDueForMonth, selectedLiability]);
+  }, [currentMonthKey, getRentDueForMonth, liabilityPayments, selectedLiability]);
   const selectedRentDue = useMemo(() => {
     if (!selectedLiability || selectedLiability.type !== 'rent') return 0;
     return getRentDueForMonth(selectedLiability.id, selectedRentMonthKey);
-  }, [getRentDueForMonth, selectedLiability, selectedRentMonthKey]);
+  }, [getRentDueForMonth, liabilityPayments, selectedLiability, selectedRentMonthKey]);
   const activeRentDueMonthKey = useMemo(() => {
     if (!activeRent) return currentMonthKey;
     for (let i = 0; i < 120; i += 1) {
@@ -316,10 +266,10 @@ export default function LiabilitiesScreen() {
       }
     }
     return currentMonthKey;
-  }, [activeRent, currentMonthKey, getRentDueForMonth]);
+  }, [activeRent, currentMonthKey, getRentDueForMonth, liabilityPayments]);
   const activeRentDueAmount = useMemo(
     () => (activeRent ? getRentDueForMonth(activeRent.id, activeRentDueMonthKey) : 0),
-    [activeRent, activeRentDueMonthKey, getRentDueForMonth]
+    [activeRent, activeRentDueMonthKey, getRentDueForMonth, liabilityPayments]
   );
   const activeRentDueDate = useMemo(() => {
     if (!activeRent) return '';
@@ -335,10 +285,24 @@ export default function LiabilitiesScreen() {
     const dueDateStart = new Date(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate());
     return todayStart.getTime() >= dueDateStart.getTime();
   }, [activeRent, activeRentDueAmount, activeRentDueMonthKey]);
-  const currentEmiDue = useMemo(() => {
-    if (!selectedLiability || selectedLiability.type !== 'emi') return 0;
-    return getEmiDueForMonth(selectedLiability.id, currentMonthKey);
-  }, [currentMonthKey, getEmiDueForMonth, selectedLiability]);
+  const shouldShowRentPaymentForItem = useCallback(
+    (item: LiabilityItem) => {
+      if (item.type !== 'rent') return true;
+      for (let i = 0; i < 120; i += 1) {
+        const candidateMonthKey = addMonthKey(currentMonthKey, i);
+        const dueAmount = getRentDueForMonth(item.id, candidateMonthKey);
+        if (dueAmount <= 0) continue;
+        const dueDay = Math.min(Math.max(new Date(item.createdAt).getDate(), 1), 28);
+        const dueDate = monthKeyToDate(candidateMonthKey, dueDay);
+        const today = new Date();
+        const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+        const dueDateStart = new Date(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate());
+        return todayStart.getTime() >= dueDateStart.getTime();
+      }
+      return false;
+    },
+    [currentMonthKey, getRentDueForMonth]
+  );
   const liabilityTotalNumber = Number(liabilityTotal);
   const liabilityMonthlyNumber = Number(liabilityMonthly);
   const estimatedEmiMonths =
@@ -349,15 +313,6 @@ export default function LiabilitiesScreen() {
     liabilityMonthlyNumber > 0
       ? Math.ceil(liabilityTotalNumber / liabilityMonthlyNumber)
       : null;
-  const enteredSavingsAmount = Number(savingsAmount);
-  const selectedGoalRemaining = selectedGoal ? Math.max(selectedGoal.targetAmount - selectedGoal.savedAmount, 0) : 0;
-  const projectedRemainingAfterAdd =
-    selectedGoal && Number.isFinite(enteredSavingsAmount)
-      ? Math.max(selectedGoalRemaining - Math.max(enteredSavingsAmount, 0), 0)
-      : selectedGoalRemaining;
-  const isSavingsAddExceeding =
-    !!selectedGoal && Number.isFinite(enteredSavingsAmount) && enteredSavingsAmount > selectedGoalRemaining;
-  const recentGoalEntries = useMemo(() => goalEntries.slice(0, 5), [goalEntries]);
   const recentLiabilityPayments = useMemo(() => liabilityPayments.slice(0, 5), [liabilityPayments]);
   const liabilityPaymentRows = useMemo(
     () =>
@@ -404,7 +359,6 @@ export default function LiabilitiesScreen() {
     setDismissedRecentPaymentIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
   };
   const showFeedback = (title: string, message: string) => setFeedback({ visible: true, title, message });
-  const showToast = (message: string) => setToast({ visible: true, message });
   const openConfirm = (title: string, message: string, onConfirm: () => Promise<void> | void) =>
     setConfirmState({ visible: true, title, message, onConfirm });
   const closeConfirm = () =>
@@ -453,7 +407,7 @@ export default function LiabilitiesScreen() {
     try {
       await initializeGoals();
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to refresh goals.';
+      const message = error instanceof Error ? error.message : 'Failed to refresh liabilities.';
       Alert.alert('Error', message);
     } finally {
       setRefreshing(false);
@@ -491,22 +445,12 @@ export default function LiabilitiesScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.highlight} />}
       >
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>{showGoalsSection ? 'Goals' : 'Liabilities'}</Text>
-          {showGoalsSection ? (
-            <TouchableOpacity style={styles.headerIconButton} onPress={() => setGoalModalVisible(true)}>
-              <Ionicons name="add" size={18} color={colors.white} />
-            </TouchableOpacity>
-          ) : showLiabilitySection ? (
-            <TouchableOpacity style={styles.headerIconButton} onPress={() => setLiabilityModalVisible(true)}>
-              <Ionicons name="add" size={18} color={colors.white} />
-            </TouchableOpacity>
-          ) : (
-            <View style={styles.headerIconButtonSpacer} />
-          )}
+          <Text style={styles.headerTitle}>Liabilities</Text>
+          <TouchableOpacity style={styles.headerIconButton} onPress={() => setLiabilityModalVisible(true)}>
+            <Ionicons name="add" size={18} color={colors.white} />
+          </TouchableOpacity>
         </View>
 
-        {showGoalsSection && (
-          <>
         <View style={styles.balanceCard}>
           <View style={styles.balanceRow}>
             <View style={styles.balanceIcon}>
@@ -517,12 +461,10 @@ export default function LiabilitiesScreen() {
               <Text style={styles.balanceSub}>Net Worth: Rs {formatCurrency(netWorth)}</Text>
             </View>
           </View>
-
           <View style={styles.assetBarTrack}>
             <View style={[styles.assetBarFill, { width: `${Math.max(assetsPct, 3)}%` }]} />
             <View style={[styles.assetBarDebt, { width: `${100 - Math.max(assetsPct, 3)}%` }]} />
           </View>
-
           <View style={styles.balanceAmounts}>
             <View>
               <Text style={styles.assetLabel}>Assets (Savings)</Text>
@@ -536,114 +478,31 @@ export default function LiabilitiesScreen() {
           </View>
         </View>
 
-        <View style={styles.ringCard}>
-          <View style={styles.ringWrap}>
-            <View style={styles.ringOuter}>
-              <View style={styles.ringInner}>
-                <Text style={styles.ringLabel}>TOTAL SAVINGS</Text>
-                <Text style={styles.ringValue}>{progressPct}%</Text>
-                <Text style={styles.ringAmount}>Rs {formatCurrency(totalSaved)}</Text>
-              </View>
-            </View>
-          </View>
-          <View style={styles.statsRow}>
-            <View style={styles.statItem}>
-              <Text style={styles.statValue}>{goals.length}</Text>
-              <Text style={styles.statLabel}>Total Goals</Text>
-            </View>
-            <View style={styles.statItem}>
-              <Text style={[styles.statValue, { color: '#1FC486' }]}>{activeGoals.length}</Text>
-              <Text style={styles.statLabel}>Active</Text>
-            </View>
-            <TouchableOpacity style={styles.statItem} onPress={() => navigation.navigate('CompletedGoals')}>
-              <Text style={[styles.statValue, { color: '#51A8FF' }]}>{completedGoals.length}</Text>
-              <Text style={styles.statLabel}>Completed</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {activeGoals.length > 0 ? (
-          <>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Active Goals</Text>
-            </View>
-
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.goalRow}>
-              {activeGoals.map((goal) => {
-                const goalPct = Math.min(Math.round((goal.savedAmount / goal.targetAmount) * 100), 100);
-                return (
-                  <View key={goal.id} style={styles.goalCard}>
-                    <View style={styles.goalTopRow}>
-                      <Text style={styles.goalTitle}>{goal.title}</Text>
-                      <Text style={styles.goalPct}>{goalPct}%</Text>
-                    </View>
-                    <Text style={styles.goalTarget}>Goal: Rs {formatCurrency(goal.targetAmount)}</Text>
-
-                    <View style={styles.goalProgressTrack}>
-                      <View style={[styles.goalProgressFill, { width: `${Math.max(goalPct, 4)}%` }]} />
-                    </View>
-
-                    <View style={styles.goalAmountRow}>
-                      <Text style={styles.goalSavedLabel}>Saved</Text>
-                      <Text style={styles.goalSavedValue}>Rs {formatCurrency(goal.savedAmount)}</Text>
-                    </View>
-
-                    <TouchableOpacity style={styles.addSavingsButton} onPress={() => openAddSavings(goal.id)}>
-                      <Text style={styles.addSavingsText}>+ Add Savings</Text>
-                    </TouchableOpacity>
-                    <View style={styles.goalActionsRow}>
-                      <TouchableOpacity
-                        style={styles.goalSecondaryButton}
-                        onPress={() => {
-                          setSelectedGoalId(goal.id);
-                          setSavingsAmount('');
-                          setSavingsMode('withdraw');
-                          setSavingsModalVisible(true);
-                        }}
-                      >
-                        <Text style={styles.goalSecondaryButtonText}>Withdraw</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={[styles.goalSecondaryButton, styles.goalDangerButton]}
-                        onPress={() => {
-                          openConfirm('Delete Goal', `Delete "${goal.title}"?`, async () => {
-                            await deleteGoal(goal.id);
-                            showFeedback('Deleted', `"${goal.title}" has been deleted.`);
-                          });
-                        }}
-                      >
-                        <Text style={styles.goalSecondaryButtonText}>Delete</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                );
-              })}
-            </ScrollView>
-          </>
-        ) : (
-          <View style={styles.emptyActiveCard}>
-            <Text style={styles.emptyActiveTitle}>No Active Goals</Text>
-            <Text style={styles.emptyActiveText}>Use the + button above to create your first goal.</Text>
-          </View>
-        )}
-        <TouchableOpacity
-          style={styles.historyOpenButton}
-          onPress={() => {
-            setHistoryType('savings');
-            setHistoryModalVisible(true);
-          }}
-        >
-          <Ionicons name="time-outline" size={16} color={colors.white} />
-          <Text style={styles.historyOpenButtonText}>View Recent Savings Activity</Text>
-        </TouchableOpacity>
-          </>
-        )}
-
-        {showLiabilitySection && (
-          <>
         <View style={styles.liabilityGraphCard}>
           <View style={styles.ringWrap}>
             <View style={[styles.ringOuter, styles.liabilityRingOuter]}>
+              <Svg width={liabilityRingSize} height={liabilityRingSize} style={styles.ringSvg}>
+                <Circle
+                  cx={liabilityRingSize / 2}
+                  cy={liabilityRingSize / 2}
+                  r={liabilityRingRadius}
+                  stroke="rgba(242,217,217,0.28)"
+                  strokeWidth={liabilityRingStroke}
+                  fill="transparent"
+                />
+                <Circle
+                  cx={liabilityRingSize / 2}
+                  cy={liabilityRingSize / 2}
+                  r={liabilityRingRadius}
+                  stroke="#F5A623"
+                  strokeWidth={liabilityRingStroke}
+                  strokeLinecap="round"
+                  fill="transparent"
+                  strokeDasharray={`${liabilityRingCircumference} ${liabilityRingCircumference}`}
+                  strokeDashoffset={liabilityRingOffset}
+                  transform={`rotate(-90 ${liabilityRingSize / 2} ${liabilityRingSize / 2})`}
+                />
+              </Svg>
               <View style={styles.ringInner}>
                 <Text style={styles.ringLabel}>TOTAL LIABILITIES</Text>
                 <Text style={[styles.ringValue, styles.liabilityRingValue]}>{liabilityProgressPct}%</Text>
@@ -721,9 +580,17 @@ export default function LiabilitiesScreen() {
                   <View style={[styles.debtProgressFill, { width: `${Math.max(paidPct, 4)}%` }]} />
                 </View>
 
-                <TouchableOpacity style={styles.makePaymentButton} onPress={() => openLiabilityPayment(item.id)}>
-                  <Text style={styles.makePaymentText}>Make Payment</Text>
-                </TouchableOpacity>
+                {shouldShowRentPaymentForItem(item) ? (
+                  <TouchableOpacity style={styles.makePaymentButton} onPress={() => openLiabilityPayment(item.id)}>
+                    <Text style={styles.makePaymentText}>Make Payment</Text>
+                  </TouchableOpacity>
+                ) : (
+                  item.type === 'rent' && (
+                    <View style={styles.goalHintBlock}>
+                      <Text style={styles.goalHintText}>Payment will be enabled on due date.</Text>
+                    </View>
+                  )
+                )}
                 <TouchableOpacity
                   style={styles.liabilityDeleteBtn}
                   onPress={() => {
@@ -836,73 +703,7 @@ export default function LiabilitiesScreen() {
             ))
           )}
         </View>
-          </>
-        )}
       </ScrollView>
-
-      <Modal visible={goalModalVisible} transparent animationType="fade" onRequestClose={() => setGoalModalVisible(false)}>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <View style={styles.modalHeaderRow}>
-              <Text style={styles.modalTitle}>New Goal</Text>
-              <TouchableOpacity onPress={() => setGoalModalVisible(false)}>
-                <Text style={styles.modalCloseText}>Close</Text>
-              </TouchableOpacity>
-            </View>
-
-            <TextInput
-              style={styles.input}
-              placeholder="Goal title"
-              placeholderTextColor={colors.light}
-              value={goalTitle}
-              onChangeText={setGoalTitle}
-            />
-            <TextInput
-              style={styles.input}
-              placeholder="Target amount"
-              placeholderTextColor={colors.light}
-              keyboardType="decimal-pad"
-              value={goalTarget}
-              onChangeText={setGoalTarget}
-            />
-            <TextInput
-              style={styles.input}
-              placeholder="Saved amount (optional)"
-              placeholderTextColor={colors.light}
-              keyboardType="decimal-pad"
-              value={goalSaved}
-              onChangeText={setGoalSaved}
-            />
-
-            <TouchableOpacity
-              style={styles.modalPrimaryButton}
-              onPress={async () => {
-                const target = Number(goalTarget);
-                const saved = Number(goalSaved || '0');
-                if (!goalTitle.trim()) {
-                  showFeedback('Validation', 'Goal title is required.');
-                  return;
-                }
-                if (!Number.isFinite(target) || target <= 0) {
-                  showFeedback('Validation', 'Target amount must be greater than 0.');
-                  return;
-                }
-                if (!Number.isFinite(saved) || saved < 0) {
-                  showFeedback('Validation', 'Saved amount cannot be negative.');
-                  return;
-                }
-                await addGoal({ title: goalTitle, targetAmount: target, savedAmount: saved });
-                setGoalTitle('');
-                setGoalTarget('');
-                setGoalSaved('');
-                setGoalModalVisible(false);
-              }}
-            >
-              <Text style={styles.modalPrimaryText}>Save Goal</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
 
       <Modal visible={liabilityModalVisible} transparent animationType="fade" onRequestClose={() => setLiabilityModalVisible(false)}>
         <View style={styles.modalBackdrop}>
@@ -1102,89 +903,6 @@ export default function LiabilitiesScreen() {
         </View>
       </Modal>
 
-      <Modal visible={savingsModalVisible} transparent animationType="fade" onRequestClose={() => setSavingsModalVisible(false)}>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <View style={styles.modalHeaderRow}>
-              <Text style={styles.modalTitle}>{savingsMode === 'add' ? 'Add Savings' : 'Withdraw Savings'}</Text>
-              <TouchableOpacity onPress={() => setSavingsModalVisible(false)}>
-                <Text style={styles.modalCloseText}>Close</Text>
-              </TouchableOpacity>
-            </View>
-
-            <Text style={styles.modalHint}>{selectedGoal ? selectedGoal.title : ''}</Text>
-            {selectedGoal && (
-              <View style={styles.goalHintBlock}>
-                {savingsMode === 'add' ? (
-                  <>
-                    <Text style={styles.goalHintText}>Remaining to goal: Rs {formatCurrency(selectedGoalRemaining)}</Text>
-                    <Text style={[styles.goalHintText, isSavingsAddExceeding && styles.goalHintError]}>
-                      Remaining after add: Rs {formatCurrency(projectedRemainingAfterAdd)}
-                    </Text>
-                  </>
-                ) : (
-                  <>
-                    <Text style={styles.goalHintText}>Saved amount: Rs {formatCurrency(selectedGoal.savedAmount)}</Text>
-                    <Text style={styles.goalHintText}>
-                      Balance after withdraw: Rs {formatCurrency(Math.max(selectedGoal.savedAmount - Math.max(enteredSavingsAmount || 0, 0), 0))}
-                    </Text>
-                  </>
-                )}
-              </View>
-            )}
-            <TextInput
-              style={styles.input}
-              placeholder="Amount"
-              placeholderTextColor={colors.light}
-              keyboardType="decimal-pad"
-              value={savingsAmount}
-              onChangeText={setSavingsAmount}
-            />
-
-            <TouchableOpacity
-              style={styles.modalPrimaryButton}
-              onPress={async () => {
-                if (!selectedGoalId) return;
-                const amount = Number(savingsAmount);
-                if (savingsMode === 'add') {
-                  if (!Number.isFinite(amount) || amount <= 0) {
-                    showFeedback('Validation', 'Savings amount must be greater than 0.');
-                    return;
-                  }
-                  try {
-                    await addSavingsToGoal(selectedGoalId, amount);
-                    if (selectedGoal && amount >= selectedGoalRemaining) {
-                      showToast(`Goal fulfilled: ${selectedGoal.title}`);
-                    }
-                    setSavingsAmount('');
-                    setSavingsModalVisible(false);
-                  } catch (error) {
-                    const message = error instanceof Error ? error.message : 'Could not add savings.';
-                    showFeedback('Validation', message);
-                  }
-                  return;
-                }
-
-                if (!Number.isFinite(amount) || amount <= 0) {
-                  showFeedback('Validation', 'Withdrawal must be greater than 0.');
-                  return;
-                }
-                try {
-                  await withdrawSavingsFromGoal(selectedGoalId, amount);
-                  setSavingsAmount('');
-                  setSavingsModalVisible(false);
-                } catch (error) {
-                  const message = error instanceof Error ? error.message : 'Could not withdraw savings.';
-                  showFeedback('Validation', message);
-                }
-              }}
-            >
-              <Text style={styles.modalPrimaryText}>{savingsMode === 'add' ? 'Add' : 'Withdraw'}</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
       <Modal visible={paymentModalVisible} transparent animationType="fade" onRequestClose={() => setPaymentModalVisible(false)}>
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
@@ -1278,40 +996,14 @@ export default function LiabilitiesScreen() {
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
             <View style={styles.modalHeaderRow}>
-              <Text style={styles.modalTitle}>{historyType === 'savings' ? 'Savings Activity' : 'Liability Payments'}</Text>
+              <Text style={styles.modalTitle}>Liability Payments</Text>
               <TouchableOpacity onPress={() => setHistoryModalVisible(false)}>
                 <Text style={styles.modalCloseText}>Close</Text>
               </TouchableOpacity>
             </View>
 
             <ScrollView style={{ maxHeight: 320 }}>
-              {historyType === 'savings' ? (
-                recentGoalEntries.length === 0 ? (
-                  <Text style={styles.historyEmpty}>No savings activity yet.</Text>
-                ) : (
-                  recentGoalEntries.map((entry) => {
-                    const goal = goals.find((item) => item.id === entry.goalId);
-                    return (
-                      <View key={entry.id} style={styles.historyRow}>
-                        <Text style={styles.historyLabel}>{goal?.title || 'Goal'} ({entry.kind})</Text>
-                        <View style={styles.historyRight}>
-                          <Text style={styles.historyAmount}>Rs {formatCurrency(entry.amount)}</Text>
-                          <TouchableOpacity
-                            onPress={() =>
-                              openConfirm('Delete Activity', 'Delete this savings activity?', async () => {
-                                await deleteGoalEntry(entry.id);
-                                showFeedback('Deleted', 'Savings activity deleted.');
-                              })
-                            }
-                          >
-                            <Text style={styles.historyDeleteText}>Delete</Text>
-                          </TouchableOpacity>
-                        </View>
-                      </View>
-                    );
-                  })
-                )
-              ) : recentLiabilityPayments.length === 0 ? (
+              {recentLiabilityPayments.length === 0 ? (
                 <Text style={styles.historyEmpty}>No payments recorded yet.</Text>
               ) : (
                 recentLiabilityPayments.map((entry) => {
@@ -1335,7 +1027,7 @@ export default function LiabilitiesScreen() {
                     </View>
                   );
                 })
-              )}
+              )} 
             </ScrollView>
           </View>
         </View>
@@ -1485,15 +1177,24 @@ const styles = StyleSheet.create({
     width: 190,
     height: 190,
     borderRadius: 95,
-    borderWidth: 9,
-    borderColor: '#D8DFEE',
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: 'transparent',
+  },
+  ringSvg: {
+    position: 'absolute',
   },
   liabilityRingOuter: {
-    borderColor: '#F2D9D9',
+    backgroundColor: 'transparent',
   },
-  ringInner: { alignItems: 'center' },
+  ringInner: {
+    width: 146,
+    height: 146,
+    borderRadius: 73,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+  },
   ringLabel: { color: colors.light, fontSize: 12, lineHeight: 16, letterSpacing: 1, fontWeight: '700' },
   ringValue: { color: colors.white, fontSize: 34, lineHeight: 40, fontWeight: '900' },
   ringAmount: { color: colors.white, fontSize: 18, lineHeight: 24, fontWeight: '700' },
@@ -1950,5 +1651,6 @@ const styles = StyleSheet.create({
   toggleButtonActive: { backgroundColor: colors.primary },
   toggleText: { color: colors.white, fontSize: 14, lineHeight: 18, fontWeight: '700' },
 });
+
 
 
