@@ -1,54 +1,59 @@
+import type { RootStackParamList } from '@/navigation/AppNavigator';
+import { useAuthStore } from '@/store/authStore';
+import colors from '@/utils/colors';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import React, { useState } from 'react';
 import {
-  View,
-  Text,
+  ActivityIndicator,
+  Alert,
   StyleSheet,
+  Text,
   TextInput,
   TouchableOpacity,
-  Alert,
-  ActivityIndicator,
+  View,
 } from 'react-native';
-import colors from '@/utils/colors';
-import { useAuthStore } from '@/store/authStore';
-import { useNavigation } from '@react-navigation/native';
+
+type SignupScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Signup'>;
 
 export default function SignupScreen() {
-  const [name, setName] = useState(''); 
+  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [rePassword, setRePassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const { signup } = useAuthStore(); 
-  const navigation = useNavigation();
+  const { signup } = useAuthStore();
+  const navigation = useNavigation<SignupScreenNavigationProp>();
 
   const handleSignup = async () => {
     if (!name || !email || !password || !rePassword) {
-      Alert.alert('Error', 'Please fill all fields ❌');
+      Alert.alert('Error', 'Please fill all fields');
       return;
     }
 
     if (!email.includes('@')) {
-      Alert.alert('Error', 'Please enter a valid email ❌');
+      Alert.alert('Error', 'Please enter a valid email');
       return;
     }
 
     if (password !== rePassword) {
-      Alert.alert('Error', 'Passwords do not match ❌');
+      Alert.alert('Error', 'Passwords do not match');
       return;
     }
 
     if (password.length < 6) {
-      Alert.alert('Error', 'Password must be at least 6 characters ❌');
+      Alert.alert('Error', 'Password must be at least 6 characters');
       return;
     }
 
     try {
       setLoading(true);
       await signup(name, email, password);
-      Alert.alert('Success', 'Signed up and logged in! 🎉');
-      navigation.replace('Dashboard');
+      Alert.alert('Success', 'Signed up and logged in');
+      navigation.replace('AppTabs', { screen: 'HomeTab' });
     } catch (err) {
-      Alert.alert('Error', err.message || 'Signup failed ❌');
+      const message = err instanceof Error ? err.message : 'Signup failed';
+      Alert.alert('Error', message);
     } finally {
       setLoading(false);
     }

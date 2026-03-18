@@ -2,38 +2,52 @@ import { useAuthStore } from '@/store/authStore';
 import colors from '@/utils/colors';
 import { useNavigation } from '@react-navigation/native';
 import React, { useState } from 'react';
-import { Alert, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const navigation = useNavigation<any>(); // navigation hook
+  const [loading, setLoading] = useState(false);
+  const navigation = useNavigation<any>();
   const { login } = useAuthStore();
 
   const handleLogin = async () => {
     if (!email || !password) {
-      Alert.alert('Error', 'Please fill all fields ❌');
+      Alert.alert('Error', 'Please fill all fields');
       return;
     }
-    try {
-      await login(email, password);
-      Alert.alert('Success', 'logged in! 🎉');
-      navigation.replace('Dashboard');
-    } catch (err) {
-      Alert.alert('Error', 'Invalid email or password ❌');
-    }
 
+    try {
+      setLoading(true);
+      await login(email, password);
+      Alert.alert('Success', 'Logged in');
+      navigation.replace('AppTabs', { screen: 'HomeTab' });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Login failed';
+      Alert.alert('Error', message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Login </Text>
+      <Text style={styles.title}>Login</Text>
 
       <TextInput
         style={styles.input}
         placeholder="Email"
         placeholderTextColor={colors.light}
         keyboardType="email-address"
+        autoCapitalize="none"
         value={email}
         onChangeText={setEmail}
       />
@@ -47,8 +61,16 @@ export default function LoginScreen() {
         onChangeText={setPassword}
       />
 
-      <TouchableOpacity style={styles.button} onPress={handleLogin}>
-        <Text style={styles.buttonText}>Login</Text>
+      <TouchableOpacity
+        style={[styles.button, loading && { opacity: 0.6 }]}
+        onPress={handleLogin}
+        disabled={loading}
+      >
+        {loading ? (
+          <ActivityIndicator size="small" color={colors.background} />
+        ) : (
+          <Text style={styles.buttonText}>Login</Text>
+        )}
       </TouchableOpacity>
     </View>
   );

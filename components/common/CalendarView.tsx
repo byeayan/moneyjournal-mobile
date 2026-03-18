@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
-import { Calendar, DateData } from 'react-native-calendars';
+import type { Transaction } from '@/types/transaction';
 import colors from '@/utils/colors';
-import { Transaction } from '@/screens/DashboardScreen';
+import React, { useEffect, useState } from 'react';
+import { StyleSheet, View } from 'react-native';
+import { Calendar, DateData } from 'react-native-calendars';
 
 type CalendarViewProps = {
   selectedDate: Date;
@@ -10,7 +10,19 @@ type CalendarViewProps = {
   transactions: Transaction[];
   showFullScreen?: boolean;
   cellHeight?: number;
+  theme?: Record<string, unknown>;
 };
+
+function toLocalDateKey(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(
+    date.getDate()
+  ).padStart(2, '0')}`;
+}
+
+function parseLocalDateString(dateString: string) {
+  const [year, month, day] = dateString.split('-').map(Number);
+  return new Date(year, (month || 1) - 1, day || 1);
+}
 
 export default function CalendarView({
   selectedDate,
@@ -18,22 +30,22 @@ export default function CalendarView({
   transactions,
   showFullScreen = false,
   cellHeight = 32,
+  theme,
 }: CalendarViewProps) {
   const [markedDates, setMarkedDates] = useState<any>({});
 
-  // Mark dates with transactions and selected date
   useEffect(() => {
     const marks: any = {};
     transactions.forEach((t) => {
-      const dateStr = new Date(t.date).toISOString().split('T')[0];
+      const dateStr = toLocalDateKey(new Date(t.date));
       if (!marks[dateStr]) marks[dateStr] = { dots: [] };
       marks[dateStr].dots.push({
-        key: t.id,
+        key: `${t.id}-${marks[dateStr].dots.length}`,
         color: t.type === 'income' ? colors.primary : colors.highlight,
       });
     });
 
-    const selectedStr = selectedDate.toISOString().split('T')[0];
+    const selectedStr = toLocalDateKey(selectedDate);
     marks[selectedStr] = {
       ...(marks[selectedStr] || {}),
       selected: true,
@@ -67,16 +79,10 @@ export default function CalendarView({
 
   return (
     <View style={styles.container}>
-      {/* Month Header */}
-      <View style={styles.monthHeader}>
-        <Text style={styles.monthText}>
-          {selectedDate.toLocaleString('default', { month: 'long', year: 'numeric' })}
-        </Text>
-      </View>
-
       <Calendar
-        current={selectedDate.toISOString().split('T')[0]}
-        onDayPress={(day: DateData) => onDateSelect(new Date(day.dateString))}
+        current={toLocalDateKey(selectedDate)}
+        onDayPress={(day: DateData) => onDateSelect(parseLocalDateString(day.dateString))}
+        onMonthChange={(month) => onDateSelect(parseLocalDateString(month.dateString))}
         markingType={'multi-dot'}
         markedDates={markedDates}
         hideExtraDays={false}
@@ -88,6 +94,7 @@ export default function CalendarView({
           textDayFontSize: showFullScreen ? 20 : 16,
           textMonthFontSize: showFullScreen ? 24 : 18,
           textDayHeaderFontSize: showFullScreen ? 16 : 14,
+          ...(theme ?? {}),
         }}
         style={showFullScreen ? { height: '100%' } : {}}
       />
@@ -100,16 +107,5 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     overflow: 'hidden',
     backgroundColor: colors.surface,
-  },
-  monthHeader: {
-    backgroundColor: colors.surface,
-    paddingVertical: 6,
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  monthText: {
-    color: colors.white,
-    fontSize: 18,
-    fontWeight: 'bold',
   },
 });

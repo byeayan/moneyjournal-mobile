@@ -32,7 +32,7 @@ export default function IndexScreen({ navigation }: Props) {
       </View>
 
       {/* Bottom image with gradient */}
-      <View style={styles.imageWrapper}>
+      <View style={styles.imageWrapper} pointerEvents="none">
         <Image
           source={require('../assets/images/87b9a94f-7ef0-479d-9645-6219eed69c51.png')}
           style={styles.bottomImage}
