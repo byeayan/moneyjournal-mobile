@@ -8,6 +8,13 @@ interface DailyTransactionsProps {
   maxItems?: number;
 }
 
+function formatAmount(value: number) {
+  return Number(value || 0).toLocaleString('en-IN', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  });
+}
+
 const DailyTransactions: React.FC<DailyTransactionsProps> = ({ transactions, maxItems }) => {
   const items = typeof maxItems === 'number' ? transactions.slice(0, maxItems) : transactions;
 
@@ -57,11 +64,14 @@ const DailyTransactions: React.FC<DailyTransactionsProps> = ({ transactions, max
             {grouped[groupKey].map((t, index) => (
               <View key={`${t.id}-${index}`} style={styles.transactionCard}>
                 <View style={styles.transactionRow}>
-                  <Text style={styles.transactionText}>{t.description || t.category}</Text>
+                  <Text style={styles.transactionText}>{t.note?.trim() || '-'}</Text>
                   <Text style={[styles.amountText, { color: t.type === 'income' ? colors.income : colors.expense }]}>
-                    {t.type === 'income' ? `+${t.amount}` : `-${t.amount}`}
+                    {t.type === 'income' ? `+₹${formatAmount(t.amount)}` : `-₹${formatAmount(t.amount)}`}
                   </Text>
                 </View>
+                {t.description?.trim() ? (
+                  <Text style={styles.transactionSubText}>Description: {t.description.trim()}</Text>
+                ) : null}
                 <Text style={styles.transactionSubText}>Category: {t.category}</Text>
               </View>
             ))}

@@ -1,11 +1,14 @@
 import { useAuthStore } from "@/store/authStore";
+import type { RootStackParamList } from "@/navigation/AppNavigator";
 import colors from "@/utils/colors";
+import { subscribeTabDoublePress } from "@/utils/tabDoublePressBus";
 import { useNavigation } from "@react-navigation/native";
-import React, { useEffect, useMemo, useState } from "react";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Modal,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -17,6 +20,10 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Calendar, DateData } from "react-native-calendars";
 
 type Gender = "male" | "female" | "other" | "prefer_not_to_say";
+type CalendarHeaderArg = {
+  month: { getMonth: () => number; getFullYear: () => number };
+  addMonth: (count: number) => void;
+};
 
 const genderLabel: Record<Gender, string> = {
   male: "Male",
@@ -24,6 +31,8 @@ const genderLabel: Record<Gender, string> = {
   other: "Other",
   prefer_not_to_say: "Prefer Not",
 };
+const MONTH_LABELS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+const MIN_DOB_YEAR = 1900;
 
 function toDateInput(value?: string) {
   if (!value) return "";
@@ -33,7 +42,7 @@ function toDateInput(value?: string) {
 }
 
 export default function ProfileScreen() {
-  const navigation = useNavigation<any>();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList, "Profile">>();
   const { user, fetchCurrentUser, updateCurrentUser, deleteCurrentUser, logout } = useAuthStore();
 
   const [username, setUsername] = useState("");
@@ -43,6 +52,26 @@ export default function ProfileScreen() {
   const [gender, setGender] = useState<Gender>("prefer_not_to_say");
   const [loading, setLoading] = useState(false);
   const [showDobPicker, setShowDobPicker] = useState(false);
+  const [dobPickerMonth, setDobPickerMonth] = useState("");
+  const [showMonthMenu, setShowMonthMenu] = useState(false);
+  const [showYearMenu, setShowYearMenu] = useState(false);
+  const [showGenderPicker, setShowGenderPicker] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [feedbackModal, setFeedbackModal] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+  }>({
+    visible: false,
+    title: "",
+    message: "",
+  });
+  const [refreshing, setRefreshing] = useState(false);
+  const scrollRef = useRef<ScrollView | null>(null);
+
+  const showFeedback = (title: string, message: string) => {
+    setFeedbackModal({ visible: true, title, message });
+  };
 
   const resetToAuth = () => {
     const parent = navigation.getParent();
@@ -53,20 +82,36 @@ export default function ProfileScreen() {
     navigation.reset({ index: 0, routes: [{ name: "Index" }] });
   };
 
-  useEffect(() => {
-    const load = async () => {
-      try {
-        setLoading(true);
-        await fetchCurrentUser();
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "Failed to load profile";
-        Alert.alert("Error", message);
-      } finally {
-        setLoading(false);
-      }
-    };
+  const loadProfile = useCallback(async () => {
+    try {
+      setLoading(true);
+      await fetchCurrentUser();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to load profile";
+      showFeedback("Error", message);
+    } finally {
+      setLoading(false);
+    }
+  }, [fetchCurrentUser]);
 
-    load();
+  useEffect(() => {
+    void loadProfile();
+  }, [loadProfile]);
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await loadProfile();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [loadProfile]);
+
+  useEffect(() => {
+    const unsubscribe = subscribeTabDoublePress("ProfileTab", () => {
+      scrollRef.current?.scrollTo({ y: 0, animated: true });
+    });
+    return unsubscribe;
   }, []);
 
   useEffect(() => {
@@ -97,23 +142,32 @@ export default function ProfileScreen() {
   }, [username, dob, phone, gender, initial]);
 
   const selectGender = () => {
-    Alert.alert("Select Gender", "Choose one", [
-      { text: "Male", onPress: () => setGender("male") },
-      { text: "Female", onPress: () => setGender("female") },
-      { text: "Other", onPress: () => setGender("other") },
-      { text: "Prefer Not", onPress: () => setGender("prefer_not_to_say") },
-      { text: "Cancel", style: "cancel" },
-    ]);
+    setShowGenderPicker(true);
   };
+
+  const openDobPicker = () => {
+    const baseDate = dob ? new Date(`${dob}T00:00:00`) : new Date();
+    const pickerDate = Number.isNaN(baseDate.getTime()) ? new Date() : baseDate;
+    const monthStart = new Date(pickerDate.getFullYear(), pickerDate.getMonth(), 1);
+    setDobPickerMonth(monthStart.toISOString().split("T")[0]);
+    setShowMonthMenu(false);
+    setShowYearMenu(false);
+    setShowDobPicker(true);
+  };
+
+  const availableYears = useMemo(() => {
+    const currentYear = new Date().getFullYear();
+    return Array.from({ length: currentYear - MIN_DOB_YEAR + 1 }, (_, index) => currentYear - index);
+  }, []);
 
   const onSave = async () => {
     if (!username.trim()) {
-      Alert.alert("Validation", "Username is required.");
+      showFeedback("Validation", "Username is required.");
       return;
     }
 
     if (phone && phone.length !== 10) {
-      Alert.alert("Validation", "Phone number must be exactly 10 digits.");
+      showFeedback("Validation", "Phone number must be exactly 10 digits.");
       return;
     }
 
@@ -125,44 +179,27 @@ export default function ProfileScreen() {
         gender,
         dob: dob.trim(),
       });
-      Alert.alert("Success", "Profile updated.");
+      showFeedback("Success", "Profile updated.");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Update failed";
-      Alert.alert("Error", message);
+      showFeedback("Error", message);
     } finally {
       setLoading(false);
     }
   };
 
   const onDeleteAccount = () => {
-    Alert.alert(
-      "Delete Account",
-      "This will permanently delete your account and all transactions. Continue?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              setLoading(true);
-              await deleteCurrentUser();
-              resetToAuth();
-            } catch (error) {
-              const message = error instanceof Error ? error.message : "Delete failed";
-              Alert.alert("Error", message);
-            } finally {
-              setLoading(false);
-            }
-          },
-        },
-      ]
-    );
+    setShowDeleteConfirm(true);
   };
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
-      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <ScrollView
+        ref={scrollRef}
+        style={styles.container}
+        contentContainerStyle={styles.content}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.highlight} />}
+      >
         <View style={styles.headerRow}>
           <TouchableOpacity onPress={() => navigation.goBack()}>
             <Text style={styles.back}>{"<"}</Text>
@@ -186,7 +223,7 @@ export default function ProfileScreen() {
         <TextInput style={[styles.input, styles.readOnlyInput]} value={email} editable={false} selectTextOnFocus={false} />
 
         <Text style={styles.label}>DOB</Text>
-        <TouchableOpacity style={styles.inputLike} onPress={() => setShowDobPicker(true)}>
+        <TouchableOpacity style={styles.inputLike} onPress={openDobPicker}>
           <Text style={[styles.inputLikeText, !dob && styles.placeholderText]}>{dob || "Select date of birth"}</Text>
         </TouchableOpacity>
 
@@ -238,12 +275,111 @@ export default function ProfileScreen() {
               </View>
 
               <Calendar
-                current={dob || undefined}
+                current={dobPickerMonth || dob || undefined}
+                customHeader={({ month, addMonth }: CalendarHeaderArg) => {
+                  const visibleMonth = month.getMonth();
+                  const visibleYear = month.getFullYear();
+
+                  return (
+                    <View>
+                      <View style={styles.dobHeaderRow}>
+                        <TouchableOpacity
+                          style={styles.dobArrowBtn}
+                          onPress={() => {
+                            addMonth(-1);
+                            setShowMonthMenu(false);
+                            setShowYearMenu(false);
+                          }}
+                        >
+                          <Text style={styles.dobArrowText}>{"<"}</Text>
+                        </TouchableOpacity>
+
+                        <View style={styles.dobHeaderCenter}>
+                          <TouchableOpacity
+                            style={styles.dobHeaderChip}
+                            onPress={() => {
+                              setShowMonthMenu((prev) => !prev);
+                              setShowYearMenu(false);
+                            }}
+                          >
+                            <Text style={styles.dobHeaderChipText}>{MONTH_LABELS[visibleMonth]}</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={styles.dobHeaderChip}
+                            onPress={() => {
+                              setShowYearMenu((prev) => !prev);
+                              setShowMonthMenu(false);
+                            }}
+                          >
+                            <Text style={styles.dobHeaderChipText}>{visibleYear}</Text>
+                          </TouchableOpacity>
+                        </View>
+
+                        <TouchableOpacity
+                          style={styles.dobArrowBtn}
+                          onPress={() => {
+                            addMonth(1);
+                            setShowMonthMenu(false);
+                            setShowYearMenu(false);
+                          }}
+                        >
+                          <Text style={styles.dobArrowText}>{">"}</Text>
+                        </TouchableOpacity>
+                      </View>
+
+                      {showMonthMenu && (
+                        <View style={styles.dobMonthGrid}>
+                          {MONTH_LABELS.map((monthName, index) => (
+                            <TouchableOpacity
+                              key={monthName}
+                              style={[styles.dobMonthCell, index === visibleMonth && styles.dobMonthCellActive]}
+                              onPress={() => {
+                                addMonth(index - visibleMonth);
+                                setShowMonthMenu(false);
+                              }}
+                            >
+                              <Text style={styles.dobMonthCellText}>{monthName.slice(0, 3)}</Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      )}
+
+                      {showYearMenu && (
+                        <ScrollView style={styles.dobYearList} nestedScrollEnabled>
+                          {availableYears.map((year) => (
+                            <TouchableOpacity
+                              key={year}
+                              style={[styles.dobYearRow, year === visibleYear && styles.dobYearRowActive]}
+                              onPress={() => {
+                                addMonth((year - visibleYear) * 12);
+                                setShowYearMenu(false);
+                              }}
+                            >
+                              <Text style={styles.dobYearText}>{year}</Text>
+                            </TouchableOpacity>
+                          ))}
+                        </ScrollView>
+                      )}
+                    </View>
+                  );
+                }}
                 onDayPress={(day: DateData) => {
                   setDob(day.dateString);
                   setShowDobPicker(false);
+                  setShowMonthMenu(false);
+                  setShowYearMenu(false);
                 }}
                 maxDate={new Date().toISOString().split("T")[0]}
+                markedDates={
+                  dob
+                    ? {
+                        [dob]: {
+                          selected: true,
+                          selectedColor: colors.primary,
+                        },
+                      }
+                    : undefined
+                }
                 theme={{
                   todayTextColor: colors.highlight,
                   arrowColor: colors.primary,
@@ -256,6 +392,85 @@ export default function ProfileScreen() {
                   textSectionTitleColor: colors.light,
                 }}
               />
+            </View>
+          </View>
+        </Modal>
+
+        <Modal visible={showGenderPicker} transparent animationType="fade" onRequestClose={() => setShowGenderPicker(false)}>
+          <View style={styles.centerBackdrop}>
+            <View style={styles.centerModalCard}>
+              <Text style={styles.centerModalTitle}>Select Gender</Text>
+
+              <TouchableOpacity style={styles.optionRow} onPress={() => { setGender("male"); setShowGenderPicker(false); }}>
+                <Text style={styles.optionText}>Male</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.optionRow} onPress={() => { setGender("female"); setShowGenderPicker(false); }}>
+                <Text style={styles.optionText}>Female</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.optionRow} onPress={() => { setGender("other"); setShowGenderPicker(false); }}>
+                <Text style={styles.optionText}>Other</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.optionRow} onPress={() => { setGender("prefer_not_to_say"); setShowGenderPicker(false); }}>
+                <Text style={styles.optionText}>Prefer Not</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.modalSecondaryBtn} onPress={() => setShowGenderPicker(false)}>
+                <Text style={styles.modalSecondaryBtnText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+
+        <Modal visible={showDeleteConfirm} transparent animationType="fade" onRequestClose={() => setShowDeleteConfirm(false)}>
+          <View style={styles.centerBackdrop}>
+            <View style={styles.centerModalCard}>
+              <Text style={styles.centerModalTitle}>Delete Account</Text>
+              <Text style={styles.centerModalMessage}>
+                This will permanently delete your account and all transactions. Continue?
+              </Text>
+              <View style={styles.modalBtnRow}>
+                <TouchableOpacity style={styles.modalSecondaryBtn} onPress={() => setShowDeleteConfirm(false)}>
+                  <Text style={styles.modalSecondaryBtnText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.modalDangerBtn}
+                  onPress={async () => {
+                    try {
+                      setShowDeleteConfirm(false);
+                      setLoading(true);
+                      await deleteCurrentUser();
+                      resetToAuth();
+                    } catch (error) {
+                      const message = error instanceof Error ? error.message : "Delete failed";
+                      showFeedback("Error", message);
+                    } finally {
+                      setLoading(false);
+                    }
+                  }}
+                >
+                  <Text style={styles.modalDangerBtnText}>Delete</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        <Modal
+          visible={feedbackModal.visible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setFeedbackModal((prev) => ({ ...prev, visible: false }))}
+        >
+          <View style={styles.centerBackdrop}>
+            <View style={styles.centerModalCard}>
+              <Text style={styles.centerModalTitle}>{feedbackModal.title}</Text>
+              <Text style={styles.centerModalMessage}>{feedbackModal.message}</Text>
+              <TouchableOpacity
+                style={styles.modalPrimaryBtn}
+                onPress={() => setFeedbackModal((prev) => ({ ...prev, visible: false }))}
+              >
+                <Text style={styles.modalPrimaryBtnText}>OK</Text>
+              </TouchableOpacity>
             </View>
           </View>
         </Modal>
@@ -389,6 +604,157 @@ const styles = StyleSheet.create({
   },
   modalClose: {
     color: colors.primary,
+    fontWeight: "700",
+  },
+  dobHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 8,
+  },
+  dobArrowBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.highlight,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  dobArrowText: {
+    color: colors.white,
+    fontSize: 18,
+    fontWeight: "700",
+  },
+  dobHeaderCenter: {
+    flexDirection: "row",
+    gap: 8,
+    alignItems: "center",
+  },
+  dobHeaderChip: {
+    borderWidth: 1,
+    borderColor: colors.highlight,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  dobHeaderChipText: {
+    color: colors.white,
+    fontWeight: "700",
+  },
+  dobMonthGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginBottom: 8,
+  },
+  dobMonthCell: {
+    width: "22%",
+    borderWidth: 1,
+    borderColor: colors.highlight,
+    borderRadius: 8,
+    paddingVertical: 8,
+    alignItems: "center",
+  },
+  dobMonthCellActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  dobMonthCellText: {
+    color: colors.white,
+    fontWeight: "600",
+  },
+  dobYearList: {
+    maxHeight: 180,
+    borderWidth: 1,
+    borderColor: colors.highlight,
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  dobYearRow: {
+    paddingVertical: 8,
+    alignItems: "center",
+    borderBottomWidth: 1,
+    borderBottomColor: colors.highlight,
+  },
+  dobYearRowActive: {
+    backgroundColor: colors.primary,
+  },
+  dobYearText: {
+    color: colors.white,
+    fontWeight: "600",
+  },
+  centerBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    justifyContent: "center",
+    paddingHorizontal: 18,
+  },
+  centerModalCard: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.highlight,
+    borderRadius: 12,
+    padding: 14,
+  },
+  centerModalTitle: {
+    color: colors.white,
+    fontSize: 18,
+    fontWeight: "700",
+    marginBottom: 8,
+  },
+  centerModalMessage: {
+    color: colors.light,
+    fontSize: 14,
+    marginBottom: 12,
+  },
+  optionRow: {
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.highlight,
+  },
+  optionText: {
+    color: colors.white,
+    fontSize: 15,
+  },
+  modalBtnRow: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: 8,
+    marginTop: 6,
+  },
+  modalPrimaryBtn: {
+    alignSelf: "flex-end",
+    backgroundColor: colors.primary,
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  modalPrimaryBtnText: {
+    color: colors.white,
+    fontWeight: "700",
+  },
+  modalSecondaryBtn: {
+    alignSelf: "flex-end",
+    borderWidth: 1,
+    borderColor: colors.light,
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    marginTop: 10,
+  },
+  modalSecondaryBtnText: {
+    color: colors.light,
+    fontWeight: "700",
+  },
+  modalDangerBtn: {
+    backgroundColor: "#8b1e2f",
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  modalDangerBtnText: {
+    color: colors.white,
     fontWeight: "700",
   },
 });

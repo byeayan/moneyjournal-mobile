@@ -4,11 +4,12 @@ import { useTransactionStore } from "@/store/transactionStore";
 import { expenseCategories } from "@/utils/categories";
 import colors from "@/utils/colors";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   Alert,
   Keyboard,
   Platform,
+  RefreshControl,
   StyleSheet,
   Text,
   TextInput,
@@ -34,10 +35,33 @@ function isSameDay(a: Date, b: Date) {
   );
 }
 
+function hasNoExplicitTime(date: Date) {
+  return (
+    date.getHours() === 0 &&
+    date.getMinutes() === 0 &&
+    date.getSeconds() === 0 &&
+    date.getMilliseconds() === 0
+  );
+}
+
+function resolveInitialEntryDate(rawDate?: string) {
+  const now = new Date();
+  if (!rawDate) return now;
+
+  const parsed = new Date(rawDate);
+  if (Number.isNaN(parsed.getTime())) return now;
+
+  if (isSameDay(parsed, now) && hasNoExplicitTime(parsed)) {
+    parsed.setHours(now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds());
+  }
+
+  return clampToNow(parsed);
+}
+
 export default function ExpenseScreen({ navigation, route }: ExpenseScreenProps) {
   const { addTransaction } = useTransactionStore();
 
-  const initialDate = clampToNow(route.params?.date ? new Date(route.params.date) : new Date());
+  const initialDate = resolveInitialEntryDate(route.params?.date);
   const [entryDate, setEntryDate] = useState<Date>(initialDate);
   const [dateStr, setDateStr] = useState<string>("");
   const [timeStr, setTimeStr] = useState<string>("");
@@ -48,6 +72,7 @@ export default function ExpenseScreen({ navigation, route }: ExpenseScreenProps)
   const [note, setNote] = useState<string>("");
   const [description, setDescription] = useState<string>("");
   const [keypadVisible, setKeypadVisible] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     const day = String(entryDate.getDate()).padStart(2, "0");
@@ -109,6 +134,20 @@ export default function ExpenseScreen({ navigation, route }: ExpenseScreenProps)
     }
   }
 
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    const resetDate = resolveInitialEntryDate(route.params?.date);
+    setEntryDate(resetDate);
+    setAmount("");
+    setCategory("");
+    setNote("");
+    setDescription("");
+    setManualTime(false);
+    setKeypadVisible(false);
+    Keyboard.dismiss();
+    setRefreshing(false);
+  }, [route.params?.date]);
+
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.headerRow}>
@@ -132,6 +171,7 @@ export default function ExpenseScreen({ navigation, route }: ExpenseScreenProps)
             enableOnAndroid
             extraScrollHeight={80}
             keyboardShouldPersistTaps="handled"
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.highlight} />}
           >
             <View style={styles.row}>
               <Text style={styles.label}>Date</Text>
@@ -216,34 +256,49 @@ export default function ExpenseScreen({ navigation, route }: ExpenseScreenProps)
             </View>
 
             <View style={styles.buttonsRow}>
-              <TouchableOpacity
-                style={styles.saveButton}
-                onPress={async () => {
-                  if (!amount || !category) return;
+                <TouchableOpacity
+                  style={styles.saveButton}
+                  onPress={async () => {
+                    if (!amount || !category) return;
+                    if (!note.trim()) {
+                      Alert.alert("Validation", "Note is required.");
+                      return;
+                    }
+                    const parsedAmount = Number(amount);
+                    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+                      Alert.alert("Validation", "Amount must be greater than 0.");
+                      return;
+                    }
 
-                  const now = new Date();
-                  const txDate = new Date(entryDate);
+                    const now = new Date();
+                    const txDate = new Date(entryDate);
 
-                  if (!manualTime) {
+                  if (!manualTime && isSameDay(txDate, now)) {
                     txDate.setHours(now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds());
                   }
 
-                  if (txDate > now) {
-                    Alert.alert("Invalid time", "Future date/time transactions are not allowed.");
-                    return;
-                  }
+                    if (txDate > now) {
+                      Alert.alert("Invalid time", "Future date/time transactions are not allowed.");
+                      return;
+                    }
 
-                  await addTransaction({
-                    amount: parseFloat(amount),
-                    note: note.trim(),
-                    description: description.trim(),
-                    category,
-                    type: "expense",
-                    date: txDate.toISOString(),
-                  });
-                  navigation.goBack();
-                }}
-              >
+                    try {
+                      await addTransaction({
+                        amount: parsedAmount,
+                        note: note.trim(),
+                        description: description.trim(),
+                        category,
+                        type: "expense",
+                        date: txDate.toISOString(),
+                      });
+                      navigation.goBack();
+                    } catch (error) {
+                      const message =
+                        error instanceof Error ? error.message : "Failed to save transaction.";
+                      Alert.alert("Error", message);
+                    }
+                  }}
+                >
                 <Text style={styles.saveText}>Save</Text>
               </TouchableOpacity>
 

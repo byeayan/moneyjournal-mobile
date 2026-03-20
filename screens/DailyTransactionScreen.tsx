@@ -1,14 +1,19 @@
 import DropdownField from '@/components/common/DropdownField';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Ionicons } from '@expo/vector-icons';
+import type { RootStackParamList } from '@/navigation/AppNavigator';
 import { useTransactionStore } from '@/store/transactionStore';
 import type { Transaction } from '@/types/transaction';
 import { expenseCategories, incomeCategories } from '@/utils/categories';
 import colors from '@/utils/colors';
 import { useNavigation } from '@react-navigation/native';
-import React, { useMemo, useState } from 'react';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   Alert,
   FlatList,
   Modal,
+  RefreshControl,
   StyleSheet,
   Text,
   TextInput,
@@ -16,6 +21,8 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+
+const DELETE_CONFIRM_PREF_KEY = 'skip_delete_transaction_confirm';
 
 interface DailyTransactionScreenProps {
   route: {
@@ -28,9 +35,21 @@ interface DailyTransactionScreenProps {
   };
 }
 
+function formatAmount(value: number) {
+  return Number(value || 0).toLocaleString('en-IN', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  });
+}
+
 export default function DailyTransactionScreen({ route }: DailyTransactionScreenProps) {
-  const navigation = useNavigation<any>();
-  const { updateTransaction, deleteTransaction } = useTransactionStore();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList, 'DailyTransaction'>>();
+  const {
+    updateTransaction,
+    deleteTransaction,
+    fetchTransactions,
+    fetchTransactionsByMonth,
+  } = useTransactionStore();
   const { date: dateString, transactions, showAll = false, title } = route.params;
   const date = new Date(dateString);
 
@@ -43,13 +62,61 @@ export default function DailyTransactionScreen({ route }: DailyTransactionScreen
   const [description, setDescription] = useState('');
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [successMessage, setSuccessMessage] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
+  const [skipDeleteConfirm, setSkipDeleteConfirm] = useState(false);
+  const [dontAskDeleteAgain, setDontAskDeleteAgain] = useState(false);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'danger' } | null>(null);
+
+  React.useEffect(() => {
+    const loadPreference = async () => {
+      const value = await AsyncStorage.getItem(DELETE_CONFIRM_PREF_KEY);
+      setSkipDeleteConfirm(value === '1');
+    };
+    void loadPreference();
+  }, []);
+
+  React.useEffect(() => {
+    if (!toast) return;
+    const timeout = setTimeout(() => setToast(null), 2200);
+    return () => clearTimeout(timeout);
+  }, [toast]);
 
   const sortedItems = useMemo(
     () => [...items].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
     [items]
   );
   const editCategoryOptions = editingTx?.type === 'income' ? incomeCategories : expenseCategories;
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      if (showAll) {
+        await fetchTransactionsByMonth(date);
+        let nextItems = useTransactionStore.getState().calendarTransactions;
+
+        if (title?.includes(' - ')) {
+          const selectedCategory = title.split(' - ')[0].trim().toLowerCase();
+          nextItems = nextItems.filter((tx) => (tx.category || '').trim().toLowerCase() === selectedCategory);
+        } else if (title?.endsWith(' Expenses')) {
+          nextItems = nextItems.filter((tx) => tx.type === 'expense');
+        }
+
+        setItems(nextItems);
+      } else {
+        await fetchTransactions(date);
+        const dayKey = date.toDateString();
+        const nextItems = useTransactionStore
+          .getState()
+          .transactions.filter((tx) => new Date(tx.date).toDateString() === dayKey);
+        setItems(nextItems);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to refresh transactions.';
+      Alert.alert('Error', message);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [date, fetchTransactions, fetchTransactionsByMonth, showAll, title]);
 
   const openEdit = (tx: Transaction) => {
     setEditingTx(tx);
@@ -91,7 +158,7 @@ export default function DailyTransactionScreen({ route }: DailyTransactionScreen
 
       setItems((prev) => prev.map((t) => (t.id === editingTx.id ? { ...t, ...updated } : t)));
       closeEdit();
-      setSuccessMessage('Transaction updated successfully.');
+      setToast({ message: 'Successfully edited', type: 'success' });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to update transaction';
       Alert.alert('Error', message);
@@ -99,8 +166,24 @@ export default function DailyTransactionScreen({ route }: DailyTransactionScreen
     }
   };
 
-  const handleDelete = (tx: Transaction) => {
+  const handleDelete = async (tx: Transaction) => {
+    if (skipDeleteConfirm) {
+      try {
+        setDeleting(true);
+        await deleteTransaction(tx.id);
+        setItems((prev) => prev.filter((t) => t.id !== tx.id));
+        setToast({ message: 'Successfully deleted', type: 'danger' });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Failed to delete transaction';
+        Alert.alert('Error', message);
+      } finally {
+        setDeleting(false);
+      }
+      return;
+    }
+
     setPendingDeleteTx(tx);
+    setDontAskDeleteAgain(false);
   };
 
   const cancelDelete = () => {
@@ -112,10 +195,14 @@ export default function DailyTransactionScreen({ route }: DailyTransactionScreen
     if (!pendingDeleteTx) return;
     try {
       setDeleting(true);
+      if (dontAskDeleteAgain) {
+        await AsyncStorage.setItem(DELETE_CONFIRM_PREF_KEY, '1');
+        setSkipDeleteConfirm(true);
+      }
       await deleteTransaction(pendingDeleteTx.id);
       setItems((prev) => prev.filter((t) => t.id !== pendingDeleteTx.id));
       setPendingDeleteTx(null);
-      setSuccessMessage('Transaction deleted successfully.');
+      setToast({ message: 'Successfully deleted', type: 'danger' });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to delete transaction';
       Alert.alert('Error', message);
@@ -136,13 +223,14 @@ export default function DailyTransactionScreen({ route }: DailyTransactionScreen
       <FlatList
         data={sortedItems}
         contentContainerStyle={{ paddingBottom: 28 }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.highlight} />}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
           <View style={styles.transactionCard}>
             <View style={styles.rowTop}>
               <Text style={styles.category}>{item.category}</Text>
               <Text style={[styles.amount, { color: item.type === 'income' ? colors.income : colors.expense }]}>
-                {item.type === 'income' ? '+' : '-'}${item.amount}
+                {item.type === 'income' ? '+₹' : '-₹'}{formatAmount(item.amount)}
               </Text>
             </View>
 
@@ -237,6 +325,18 @@ export default function DailyTransactionScreen({ route }: DailyTransactionScreen
               This action cannot be undone. Are you sure you want to delete{' '}
               <Text style={styles.modalEmphasis}>{pendingDeleteTx?.category}</Text>?
             </Text>
+            <TouchableOpacity
+              style={styles.confirmRow}
+              onPress={() => setDontAskDeleteAgain((prev) => !prev)}
+              disabled={deleting}
+            >
+              <Ionicons
+                name={dontAskDeleteAgain ? 'checkbox' : 'square-outline'}
+                size={18}
+                color={dontAskDeleteAgain ? colors.primary : colors.light}
+              />
+              <Text style={styles.confirmText}>Don't ask this ever again</Text>
+            </TouchableOpacity>
 
             <View style={styles.modalActions}>
               <TouchableOpacity style={styles.cancelBtn} onPress={cancelDelete} disabled={deleting}>
@@ -249,18 +349,11 @@ export default function DailyTransactionScreen({ route }: DailyTransactionScreen
           </View>
         </View>
       </Modal>
-
-      <Modal visible={!!successMessage} transparent animationType="fade" onRequestClose={() => setSuccessMessage('')}>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.successCard}>
-            <Text style={styles.successTitle}>Success</Text>
-            <Text style={styles.successText}>{successMessage}</Text>
-            <TouchableOpacity style={styles.successBtn} onPress={() => setSuccessMessage('')}>
-              <Text style={styles.successBtnText}>OK</Text>
-            </TouchableOpacity>
-          </View>
+      {toast ? (
+        <View style={[styles.toast, toast.type === 'success' ? styles.toastSuccess : styles.toastDanger]}>
+          <Text style={styles.toastText}>{toast.message}</Text>
         </View>
-      </Modal>
+      ) : null}
       </View>
     </SafeAreaView>
   );
@@ -348,6 +441,16 @@ const styles = StyleSheet.create({
     color: colors.white,
     fontWeight: '700',
   },
+  confirmRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  confirmText: {
+    color: colors.light,
+    fontSize: 13,
+  },
   input: {
     borderWidth: 1,
     borderColor: colors.highlight,
@@ -394,33 +497,28 @@ const styles = StyleSheet.create({
     color: colors.white,
     fontWeight: '700',
   },
-  successCard: {
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    padding: 14,
+  toast: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    bottom: 16,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
     borderWidth: 1,
+    alignItems: 'center',
+  },
+  toastSuccess: {
+    backgroundColor: 'rgba(34,197,94,0.16)',
     borderColor: colors.income,
   },
-  successTitle: {
-    color: colors.income,
-    fontSize: 18,
-    fontWeight: '700',
-    marginBottom: 6,
+  toastDanger: {
+    backgroundColor: 'rgba(241,148,138,0.18)',
+    borderColor: colors.expense,
   },
-  successText: {
+  toastText: {
     color: colors.white,
-    fontSize: 14,
-    marginBottom: 12,
-  },
-  successBtn: {
-    alignSelf: 'flex-end',
-    backgroundColor: colors.income,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 8,
-  },
-  successBtnText: {
-    color: colors.background,
     fontWeight: '700',
+    fontSize: 14,
   },
 });

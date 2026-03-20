@@ -108,8 +108,8 @@ export default function ChartWebView({
             return;
           }
 
-          Chart.defaults.color = '${colors.light}';
-          Chart.defaults.borderColor = '${colors.highlight}';
+          Chart.defaults.color = 'rgba(204, 198, 225, 0.82)';
+          Chart.defaults.borderColor = 'rgba(86, 71, 135, 0.32)';
           Chart.defaults.font.family = 'Arial, sans-serif';
 
           const baseOptions = {
@@ -119,7 +119,7 @@ export default function ChartWebView({
             plugins: {
               legend: {
                 labels: {
-                  color: '${colors.light}'
+                  color: 'rgba(204, 198, 225, 0.78)'
                 }
               }
             }
@@ -130,12 +130,12 @@ export default function ChartWebView({
             : {
                 scales: {
                   x: {
-                    ticks: { color: '${colors.light}' },
-                    grid: { color: '${colors.highlight}' }
+                    ticks: { color: 'rgba(204, 198, 225, 0.72)' },
+                    grid: { color: 'rgba(86, 71, 135, 0.24)' }
                   },
                   y: {
-                    ticks: { color: '${colors.light}' },
-                    grid: { color: '${colors.highlight}' }
+                    ticks: { color: 'rgba(204, 198, 225, 0.72)' },
+                    grid: { color: 'rgba(86, 71, 135, 0.24)' }
                   }
                 }
               };

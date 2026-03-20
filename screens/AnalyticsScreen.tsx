@@ -2,12 +2,13 @@ import type { RootStackParamList } from '@/navigation/AppNavigator';
 import ChartWebView from '@/components/charts/ChartWebView';
 import { API_BASE_URL } from '@/config/api';
 import { useAuthStore } from '@/store/authStore';
+import { toMonthKey } from '@/store/budgetStore';
 import type { Transaction } from '@/types/transaction';
 import colors from '@/utils/colors';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 type AnalyticsNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Analytics'>;
@@ -22,6 +23,36 @@ const TIMEFRAME_OPTIONS: { label: string; value: Timeframe }[] = [
   { label: 'Quarterly', value: 'quarterly' },
   { label: 'Yearly', value: 'yearly' },
 ];
+const MUTED_INCOME = '#B89CFF';
+const MUTED_EXPENSE = '#8D71D7';
+const MUTED_PRIMARY = '#A783F4';
+const MUTED_PRIMARY_FILL = 'rgba(167, 131, 244, 0.22)';
+
+async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs = 10000) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error('Request timed out while loading analytics.');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+async function readResponseBody(response: Response) {
+  const text = await response.text();
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { message: text };
+  }
+}
 
 function normalizeTransaction(raw: any): Transaction {
   return {
@@ -38,6 +69,7 @@ function normalizeTransaction(raw: any): Transaction {
 
 function extractTransactions(payload: any): any[] {
   if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.items)) return payload.items;
   if (Array.isArray(payload?.transactions)) return payload.transactions;
   if (Array.isArray(payload?.data)) return payload.data;
   return [];
@@ -50,7 +82,7 @@ function dedupeTransactions(items: Transaction[]) {
 }
 
 function formatCurrency(value: number) {
-  return value.toLocaleString('en-US', {
+  return value.toLocaleString('en-IN', {
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   });
@@ -58,6 +90,15 @@ function formatCurrency(value: number) {
 
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
+}
+
+function normalizeCategoryLabel(value: unknown) {
+  if (typeof value !== 'string') return 'Other';
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.toLowerCase() === 'undefined' || trimmed.toLowerCase() === 'null') {
+    return 'Other';
+  }
+  return trimmed;
 }
 
 function toDateKey(date: Date) {
@@ -105,8 +146,8 @@ function buildIncomeExpenseByPeriod(transactions: Transaction[], timeframe: Time
     return {
       labels,
       datasets: [
-        { label: 'Income', data: income, backgroundColor: colors.income },
-        { label: 'Expense', data: expense, backgroundColor: colors.expense },
+        { label: 'Income', data: income, backgroundColor: MUTED_INCOME },
+        { label: 'Expense', data: expense, backgroundColor: MUTED_EXPENSE },
       ],
     };
   }
@@ -123,8 +164,8 @@ function buildIncomeExpenseByPeriod(transactions: Transaction[], timeframe: Time
   return {
     labels,
     datasets: [
-      { label: 'Income', data: labels.map((label) => bucketMap[label].income), backgroundColor: colors.income },
-      { label: 'Expense', data: labels.map((label) => bucketMap[label].expense), backgroundColor: colors.expense },
+      { label: 'Income', data: labels.map((label) => bucketMap[label].income), backgroundColor: MUTED_INCOME },
+      { label: 'Expense', data: labels.map((label) => bucketMap[label].expense), backgroundColor: MUTED_EXPENSE },
     ],
   };
 }
@@ -134,7 +175,8 @@ function buildTopSpendingCategories(transactions: Transaction[]) {
   transactions
     .filter((transaction) => transaction.type === 'expense')
     .forEach((transaction) => {
-      categoryMap[transaction.category] = (categoryMap[transaction.category] ?? 0) + transaction.amount;
+      const category = normalizeCategoryLabel(transaction.category);
+      categoryMap[category] = (categoryMap[category] ?? 0) + transaction.amount;
     });
   const top = Object.entries(categoryMap)
     .map(([label, value]) => ({ label, value }))
@@ -146,7 +188,7 @@ function buildTopSpendingCategories(transactions: Transaction[]) {
     datasets: [
       {
         data: top.map((x) => x.value),
-        backgroundColor: ['#654EB0', '#564787', '#7E6CC4', '#9F90D8', '#B9AFE8'],
+        backgroundColor: ['#C9AEFF', '#B89CFF', '#A783F4', '#9570E5', '#845ED2'],
       },
     ],
   };
@@ -170,8 +212,8 @@ function buildExpenseTrendByPeriod(transactions: Transaction[], timeframe: Timef
         {
           label: 'Weekly Expense',
           data: values,
-          borderColor: colors.primary,
-          backgroundColor: 'rgba(101, 78, 176, 0.3)',
+          borderColor: MUTED_PRIMARY,
+          backgroundColor: MUTED_PRIMARY_FILL,
           tension: 0.3,
           fill: true,
         },
@@ -194,8 +236,8 @@ function buildExpenseTrendByPeriod(transactions: Transaction[], timeframe: Timef
       {
         label: `${timeframe[0].toUpperCase()}${timeframe.slice(1)} Expense`,
         data: labels.map((label) => bucketMap[label]),
-        borderColor: colors.primary,
-        backgroundColor: 'rgba(101, 78, 176, 0.3)',
+        borderColor: MUTED_PRIMARY,
+        backgroundColor: MUTED_PRIMARY_FILL,
         tension: 0.3,
         fill: true,
       },
@@ -209,70 +251,70 @@ export default function AnalyticsScreen() {
 
   const [allTransactions, setAllTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [timeframe, setTimeframe] = useState<Timeframe>('monthly');
   const [selectedWeekIndex, setSelectedWeekIndex] = useState(0);
 
-  useEffect(() => {
-    const fetchAllTransactions = async () => {
-      if (!authToken) {
-        setError('Not authenticated');
-        setLoading(false);
-        return;
-      }
+  const fetchAllTransactions = useCallback(async () => {
+    if (!authToken) {
+      setError('Not authenticated');
+      setLoading(false);
+      return;
+    }
 
-      try {
-        setLoading(true);
-        setError(null);
+    try {
+      setLoading(true);
+      setError(null);
 
-        const headers = {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${authToken}`,
-        };
+      const headers = {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${authToken}`,
+      };
 
-        let merged: Transaction[] = [];
-        let fetched = false;
+      const pageSize = 200;
+      const pageCap = 25;
+      let page = 1;
+      let totalPages = 1;
+      const merged: Transaction[] = [];
 
-        const allResponse = await fetch(`${API_BASE_URL}/transactions`, { method: 'GET', headers });
-        const allData = await allResponse.json();
-
-        if (allResponse.ok) {
-          const raw = extractTransactions(allData);
-          if (raw.length > 0) {
-            merged = raw.map(normalizeTransaction);
-            fetched = true;
-          }
+      while (page <= totalPages && page <= pageCap) {
+        const response = await fetchWithTimeout(
+          `${API_BASE_URL}/transactions?page=${page}&limit=${pageSize}`,
+          { method: 'GET', headers }
+        );
+        const data = await readResponseBody(response);
+        if (!response.ok) {
+          throw new Error((data as any)?.message || 'Failed to load analytics data');
         }
 
-        if (!fetched) {
-          const now = new Date();
-          const monthlyResults = await Promise.all(
-            Array.from({ length: 12 }).map(async (_, idx) => {
-              const d = new Date(now.getFullYear(), now.getMonth() - idx, 1);
-              const month = d.getMonth() + 1;
-              const year = d.getFullYear();
-              const resp = await fetch(`${API_BASE_URL}/transactions?month=${month}&year=${year}`, {
-                method: 'GET',
-                headers,
-              });
-              const payload = await resp.json();
-              if (!resp.ok) return [];
-              return extractTransactions(payload).map(normalizeTransaction);
-            })
-          );
-          merged = monthlyResults.flat();
-        }
-
-        setAllTransactions(dedupeTransactions(merged));
-      } catch (e) {
-        setError(e instanceof Error ? e.message : 'Failed to load analytics data');
-      } finally {
-        setLoading(false);
+        const raw = extractTransactions(data);
+        merged.push(...raw.map(normalizeTransaction));
+        totalPages = Number((data as any)?.pagination?.totalPages ?? 1);
+        if (raw.length === 0) break;
+        page += 1;
       }
-    };
 
-    void fetchAllTransactions();
+      setAllTransactions(dedupeTransactions(merged));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to load analytics data');
+    } finally {
+      setLoading(false);
+    }
   }, [authToken]);
+
+  useEffect(() => {
+    void fetchAllTransactions();
+  }, [fetchAllTransactions]);
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await fetchAllTransactions();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [fetchAllTransactions]);
 
   const hasData = allTransactions.length > 0;
   const anchorDate = useMemo(() => (hasData ? new Date(allTransactions[0].date) : new Date()), [hasData, allTransactions]);
@@ -359,9 +401,9 @@ export default function AnalyticsScreen() {
     () => ({
       labels: ['Current', 'Simulated'],
       datasets: [
-        { label: 'Income', data: [baseline.income, simulated.income], backgroundColor: colors.income },
-        { label: 'Expense', data: [baseline.expense, simulated.expense], backgroundColor: colors.expense },
-        { label: 'Net', data: [currentNet, simulated.net], backgroundColor: colors.primary },
+        { label: 'Income', data: [baseline.income, simulated.income], backgroundColor: MUTED_INCOME },
+        { label: 'Expense', data: [baseline.expense, simulated.expense], backgroundColor: MUTED_EXPENSE },
+        { label: 'Net', data: [currentNet, simulated.net], backgroundColor: MUTED_PRIMARY },
       ],
     }),
     [baseline.income, baseline.expense, simulated.income, simulated.expense, simulated.net, currentNet]
@@ -406,13 +448,33 @@ export default function AnalyticsScreen() {
     </View>
   );
 
+  const handleGenerateReport = () => {
+    navigation.navigate('ReportPreview', {
+      transactions: allTransactions,
+      selectedMonthKey: toMonthKey(new Date()),
+    });
+  };
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.highlight} />}
+      >
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-            <Text style={styles.backText}>Back</Text>
-          </TouchableOpacity>
+          <View style={styles.headerTopRow}>
+            <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+              <Text style={styles.backText}>Back</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={handleGenerateReport}
+              style={[styles.reportHeaderButton, !hasData && styles.reportHeaderButtonDisabled]}
+              disabled={!hasData}
+            >
+              <Text style={styles.reportHeaderButtonText}>Report</Text>
+            </TouchableOpacity>
+          </View>
           <Text style={styles.title}>Analytics</Text>
         </View>
 
@@ -457,12 +519,12 @@ export default function AnalyticsScreen() {
                 </TouchableOpacity>
               </View>
 
-              <Text style={styles.metricText}>Current Net: ${formatCurrency(currentNet)}</Text>
+              <Text style={styles.metricText}>Current Net: ₹{formatCurrency(currentNet)}</Text>
               <Text style={[styles.metricText, { color: simulated.net >= currentNet ? colors.income : colors.expense }]}>
-                Simulated Net: ${formatCurrency(simulated.net)}
+                Simulated Net: ₹{formatCurrency(simulated.net)}
               </Text>
               <Text style={styles.metricDelta}>
-                Change: {simulated.net - currentNet >= 0 ? '+' : '-'}${formatCurrency(Math.abs(simulated.net - currentNet))}
+                Change: {simulated.net - currentNet >= 0 ? '+₹' : '-₹'}{formatCurrency(Math.abs(simulated.net - currentNet))}
               </Text>
 
               <View style={styles.controlBlock}>
@@ -525,6 +587,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   content: { padding: 16, paddingBottom: 30 },
   header: { marginBottom: 14 },
+  headerTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   backButton: {
     alignSelf: 'flex-start',
     paddingVertical: 6,
@@ -534,6 +597,16 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   backText: { color: colors.white, fontSize: 14, fontWeight: '600' },
+  reportHeaderButton: {
+    backgroundColor: colors.primary,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  reportHeaderButtonDisabled: {
+    opacity: 0.45,
+  },
+  reportHeaderButtonText: { color: colors.white, fontSize: 13, fontWeight: '700' },
   title: { color: colors.white, fontSize: 28, fontWeight: 'bold' },
   toggleWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
   toggleBtn: {
@@ -556,7 +629,14 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   stateText: { color: colors.light, fontSize: 14 },
-  chartCard: { backgroundColor: colors.surface, borderRadius: 12, padding: 12, marginBottom: 14 },
+  chartCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(204, 198, 225, 0.14)',
+  },
   chartHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
   chartTitle: { color: colors.white, fontSize: 16, fontWeight: '700', flexShrink: 1, paddingRight: 8 },
   weekNav: { flexDirection: 'row', alignItems: 'center', gap: 6, marginLeft: 8, flexShrink: 0 },
@@ -566,7 +646,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.primary,
+    backgroundColor: 'rgba(101, 78, 176, 0.35)',
   },
   weekNavDisabled: { opacity: 0.35 },
   weekNavText: { color: colors.white, fontWeight: '700', fontSize: 14 },
@@ -592,7 +672,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.primary,
+    backgroundColor: 'rgba(101, 78, 176, 0.38)',
   },
   controlButtonText: { color: colors.white, fontSize: 20, fontWeight: '700', lineHeight: 22 },
 });

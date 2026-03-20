@@ -1,6 +1,7 @@
 import React from 'react';
 import { TouchableOpacity, Text, StyleSheet } from 'react-native';
 import colors from '@/utils/colors';
+import theme from '@/utils/theme';
 
 type Props = {
   title: string;
@@ -18,15 +19,16 @@ export default function CustomButton({ title, onPress }: Props) {
 const styles = StyleSheet.create({
   button: {
     backgroundColor: colors.primary,
-    padding: 15,
-    borderRadius: 10,
+    height: theme.controls.buttonHeight,
+    borderRadius: theme.radius.md,
     alignItems: 'center',
+    justifyContent: 'center',
     marginVertical: 10,
-    width: 200,
+    width: '100%',
   },
   text: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: 'bold',
+    color: colors.white,
+    fontSize: theme.typography.body,
+    fontWeight: '700',
   },
 });

@@ -3,6 +3,22 @@ import { Transaction, TransactionMetrics } from '@/types/transaction';
 import { create } from 'zustand';
 import { useAuthStore } from './authStore';
 
+async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs = 10000) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error('Request timed out. Please check your internet connection and try again.');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 function toLocalDateKey(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(
     date.getDate()
@@ -37,6 +53,14 @@ function extractErrorMessage(body: any, fallback: string) {
   return fallback;
 }
 
+function extractTransactionList(body: any): any[] {
+  if (Array.isArray(body)) return body;
+  if (Array.isArray(body?.items)) return body.items;
+  if (Array.isArray(body?.transactions)) return body.transactions;
+  if (Array.isArray(body?.data)) return body.data;
+  return [];
+}
+
 let latestDayFetchRequestId = 0;
 let latestMonthFetchRequestId = 0;
 
@@ -50,6 +74,7 @@ interface TransactionState {
   deleteTransaction: (id: string) => Promise<void>;
   fetchTransactions: (date: Date | string) => Promise<void>;
   fetchTransactionsByMonth: (date: Date | string) => Promise<void>;
+  fetchTransactionsForMonth: (date: Date | string) => Promise<Transaction[]>;
   getTransactionMetrics: () => Promise<TransactionMetrics>;
 }
 
@@ -60,12 +85,13 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
   setTransactions: (transactions: Transaction[]) => set({ transactions }),
   addTransaction: async (transaction) => {
     try {
-      const token = useAuthStore.getState().authToken;
-      if (!token) {
-        throw new Error('Authentication token is missing. Please log in.');
+      if (!transaction.note || !transaction.note.trim()) {
+        throw new Error('Note is required.');
       }
 
-      const response = await fetch(`${API_BASE_URL}/transactions`, {
+      const token = await useAuthStore.getState().requireValidToken();
+
+      const response = await fetchWithTimeout(`${API_BASE_URL}/transactions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -74,13 +100,13 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
         body: JSON.stringify(transaction),
       });
 
-      const responseData = await response.json();
+      const responseData = await readResponseBody(response);
 
       if (!response.ok) {
-        throw new Error(responseData.message || 'Failed to add transaction.');
+        throw new Error(extractErrorMessage(responseData, 'Failed to add transaction.'));
       }
 
-      const createdTransaction = normalizeTransaction(responseData.transaction);
+      const createdTransaction = normalizeTransaction((responseData as any)?.transaction ?? responseData);
 
       set((state) => ({
         transactions: [createdTransaction, ...state.transactions],
@@ -99,51 +125,24 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
   },
 
   updateTransaction: async (id, payload) => {
-    const token = useAuthStore.getState().authToken;
-    if (!token) throw new Error('No auth token found');
+    const token = await useAuthStore.getState().requireValidToken();
 
-    const headers = {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    };
+    const response = await fetchWithTimeout(`${API_BASE_URL}/transactions/${id}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
+    });
 
-    const attempts: Array<{ method: 'PUT' | 'PATCH' | 'POST'; url: string; body: any }> = [
-      { method: 'PUT', url: `${API_BASE_URL}/transactions/${id}`, body: payload },
-      { method: 'PATCH', url: `${API_BASE_URL}/transactions/${id}`, body: payload },
-      { method: 'PUT', url: `${API_BASE_URL}/transactions`, body: { id, ...payload } },
-      { method: 'PATCH', url: `${API_BASE_URL}/transactions`, body: { id, ...payload } },
-      { method: 'PUT', url: `${API_BASE_URL}/transactions`, body: { _id: id, ...payload } },
-      { method: 'PATCH', url: `${API_BASE_URL}/transactions`, body: { _id: id, ...payload } },
-      { method: 'POST', url: `${API_BASE_URL}/transactions/update/${id}`, body: payload },
-      { method: 'POST', url: `${API_BASE_URL}/transactions/update`, body: { id, ...payload } },
-      { method: 'POST', url: `${API_BASE_URL}/transactions/update`, body: { _id: id, ...payload } },
-      { method: 'POST', url: `${API_BASE_URL}/transactions/${id}`, body: payload },
-    ];
-
-    let lastError = 'Failed to update transaction';
-    let updatedTransaction: Transaction | null = null;
-
-    for (const attempt of attempts) {
-      const response = await fetch(attempt.url, {
-        method: attempt.method,
-        headers,
-        body: JSON.stringify(attempt.body),
-      });
-
-      const body = await readResponseBody(response);
-      if (response.ok) {
-        const updatedRaw = (body as any)?.transaction ?? body ?? { ...payload, id };
-        updatedTransaction = normalizeTransaction({ ...updatedRaw, id });
-        break;
-      }
-
-      lastError = extractErrorMessage(body, `Failed to update transaction (${response.status})`);
-      if (![400, 404, 405].includes(response.status)) break;
+    const body = await readResponseBody(response);
+    if (!response.ok) {
+      throw new Error(extractErrorMessage(body, `Failed to update transaction (${response.status})`));
     }
 
-    if (!updatedTransaction) {
-      throw new Error(lastError);
-    }
+    const updatedRaw = (body as any)?.transaction ?? body ?? { ...payload, id };
+    const updatedTransaction = normalizeTransaction({ ...updatedRaw, id });
 
     set((state) => ({
       transactions: state.transactions.map((t) => (t.id === id ? updatedTransaction : t)),
@@ -155,49 +154,19 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
   },
 
   deleteTransaction: async (id) => {
-    const token = useAuthStore.getState().authToken;
-    if (!token) throw new Error('No auth token found');
+    const token = await useAuthStore.getState().requireValidToken();
 
-    const headers = {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    };
+    const response = await fetchWithTimeout(`${API_BASE_URL}/transactions/${id}`, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    });
 
-    const attempts: Array<{ method: 'DELETE' | 'POST'; url: string; body?: any }> = [
-      { method: 'DELETE', url: `${API_BASE_URL}/transactions/${id}` },
-      { method: 'DELETE', url: `${API_BASE_URL}/transactions`, body: { id } },
-      { method: 'DELETE', url: `${API_BASE_URL}/transactions`, body: { _id: id } },
-      { method: 'POST', url: `${API_BASE_URL}/transactions/delete/${id}` },
-      { method: 'POST', url: `${API_BASE_URL}/transactions/delete`, body: { id } },
-      { method: 'POST', url: `${API_BASE_URL}/transactions/delete`, body: { _id: id } },
-      { method: 'POST', url: `${API_BASE_URL}/transactions/${id}/delete` },
-      { method: 'DELETE', url: `${API_BASE_URL}/transactions/${id}` },
-      { method: 'DELETE', url: `${API_BASE_URL}/transactions`, body: { id } },
-    ];
-
-    let deleted = false;
-    let lastError = 'Failed to delete transaction';
-
-    for (const attempt of attempts) {
-      const response = await fetch(attempt.url, {
-        method: attempt.method,
-        headers,
-        body: attempt.body ? JSON.stringify(attempt.body) : undefined,
-      });
-
-      const body = await readResponseBody(response);
-
-      if (response.ok) {
-        deleted = true;
-        break;
-      }
-
-      lastError = extractErrorMessage(body, `Failed to delete transaction (${response.status})`);
-      if (![400, 404, 405].includes(response.status)) break;
-    }
-
-    if (!deleted) {
-      throw new Error(lastError);
+    const body = await readResponseBody(response);
+    if (!response.ok) {
+      throw new Error(extractErrorMessage(body, `Failed to delete transaction (${response.status})`));
     }
 
     set((state) => ({
@@ -209,13 +178,12 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
   },
 
   fetchTransactions: async (date: Date | string) => {
-    const token = useAuthStore.getState().authToken;
-    if (!token) throw new Error('No auth token found');
+    const token = await useAuthStore.getState().requireValidToken();
     const requestId = ++latestDayFetchRequestId;
 
     const day = toLocalDateKey(new Date(date));
 
-    const response = await fetch(`${API_BASE_URL}/transactions?date=${day}`, {
+    const response = await fetchWithTimeout(`${API_BASE_URL}/transactions?date=${day}`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
@@ -223,53 +191,70 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
       },
     });
 
-    const data = await response.json();
+    const data = await readResponseBody(response);
     if (response.ok) {
       if (requestId !== latestDayFetchRequestId) return;
-      const normalized = Array.isArray(data) ? data.map(normalizeTransaction) : [];
+      const normalized = extractTransactionList(data).map(normalizeTransaction);
       set({ transactions: normalized });
     } else {
-      throw new Error(data.message || 'Fetching transactions failed');
+      throw new Error(extractErrorMessage(data, 'Fetching transactions failed'));
     }
   },
 
   fetchTransactionsByMonth: async (date: Date | string) => {
-    const token = useAuthStore.getState().authToken;
-    if (!token) throw new Error('No auth token found');
+    const token = await useAuthStore.getState().requireValidToken();
     const requestId = ++latestMonthFetchRequestId;
 
     const d = new Date(date);
     const month = d.getMonth() + 1;
     const year = d.getFullYear();
 
-    const response = await fetch(
-      `${API_BASE_URL}/transactions?month=${month}&year=${year}`,
-      {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-      }
-    );
+    const response = await fetchWithTimeout(`${API_BASE_URL}/transactions?month=${month}&year=${year}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    });
 
-    const data = await response.json();
+    const data = await readResponseBody(response);
     if (response.ok) {
       if (requestId !== latestMonthFetchRequestId) return;
-      const normalized = Array.isArray(data) ? data.map(normalizeTransaction) : [];
+      const normalized = extractTransactionList(data).map(normalizeTransaction);
       set({ calendarTransactions: normalized });
     } else {
-      throw new Error(data.message || 'Fetching monthly transactions failed');
+      throw new Error(extractErrorMessage(data, 'Fetching monthly transactions failed'));
     }
+  },
+
+  fetchTransactionsForMonth: async (date: Date | string) => {
+    const token = await useAuthStore.getState().requireValidToken();
+
+    const d = new Date(date);
+    const month = d.getMonth() + 1;
+    const year = d.getFullYear();
+
+    const response = await fetchWithTimeout(`${API_BASE_URL}/transactions?month=${month}&year=${year}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    const data = await readResponseBody(response);
+    if (response.ok) {
+      return extractTransactionList(data).map(normalizeTransaction);
+    }
+
+    throw new Error(extractErrorMessage(data, 'Fetching monthly transactions failed'));
   },
 
   getTransactionMetrics: async () => {
     try {
-      const token = useAuthStore.getState().authToken;
+      const token = await useAuthStore.getState().requireValidToken();
 
-      if (!token) throw new Error('No auth token found');
-
-      const response = await fetch(`${API_BASE_URL}/transactions/metrics`, {
+      const response = await fetchWithTimeout(`${API_BASE_URL}/transactions/metrics`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -277,13 +262,17 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
         },
       });
 
-      const data = await response.json();
+      const data = await readResponseBody(response);
 
       if (!response.ok) {
-        throw new Error(data.message || 'Failed to fetch transaction metrics');
+        throw new Error(extractErrorMessage(data, 'Failed to fetch transaction metrics'));
       }
-      set({ transactionMetrics: data });
-      return data;
+      const metrics = {
+        monthlyIncome: Number((data as any)?.monthlyIncome ?? 0),
+        monthlyExpense: Number((data as any)?.monthlyExpense ?? 0),
+      };
+      set({ transactionMetrics: metrics });
+      return metrics;
     } catch (error) {
       console.error('Error fetching transaction metrics:', error);
       throw error;
