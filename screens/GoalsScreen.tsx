@@ -107,6 +107,7 @@ export default function GoalsScreen() {
     deleteLiabilityPayment,
     getRentDueForMonth,
     getEmiDueForMonth,
+    refreshGoals,
   } = useGoalsStore();
 
   const [goalModalVisible, setGoalModalVisible] = useState(false);
@@ -440,14 +441,14 @@ export default function GoalsScreen() {
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      await initializeGoals();
+      await refreshGoals();
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to refresh goals.';
       Alert.alert('Error', message);
     } finally {
       setRefreshing(false);
     }
-  }, [initializeGoals]);
+  }, [refreshGoals]);
 
   useEffect(() => {
     const tabName = 'GoalsTab';

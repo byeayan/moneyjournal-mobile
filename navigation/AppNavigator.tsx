@@ -1,4 +1,5 @@
 import AnalyticsScreen from '@/screens/AnalyticsScreen';
+import SuggestionsScreen from '@/screens/SuggestionsScreen';
 import BudgetScreen from '@/screens/BudgetScreen';
 import ClearedLiabilitiesScreen from '@/screens/ClearedLiabilitiesScreen';
 import CompletedGoalsScreen from '@/screens/CompletedGoalsScreen';
@@ -32,6 +33,7 @@ export type AppTabParamList = {
   GoalsTab: undefined;
   LiabilitiesTab: undefined;
   BudgetTab: undefined;
+  SuggestionsTab: undefined;
   ProfileTab: undefined;
 };
 
@@ -70,6 +72,7 @@ function getTabIcon(
   if (routeName === 'GoalsTab') return focused ? 'trophy' : 'trophy-outline';
   if (routeName === 'LiabilitiesTab') return focused ? 'card' : 'card-outline';
   if (routeName === 'BudgetTab') return focused ? 'wallet' : 'wallet-outline';
+  if (routeName === 'SuggestionsTab') return focused ? 'sparkles' : 'sparkles-outline';
   return focused ? 'person' : 'person-outline';
 }
 
@@ -164,7 +167,9 @@ function CustomTabBar({ state, navigation, insets }: BottomTabBarProps) {
                 ? 'Liabilities'
               : route.name === 'BudgetTab'
                 ? 'Budget'
-                : 'Profile';
+                : route.name === 'SuggestionsTab'
+                  ? 'AI'
+                  : 'Profile';
 
         const onPress = () => {
           const now = Date.now();
@@ -248,6 +253,13 @@ function MainTabs() {
         component={BudgetScreen}
         options={{
           title: 'Budget',
+        }}
+      />
+      <Tab.Screen
+        name="SuggestionsTab"
+        component={SuggestionsScreen}
+        options={{
+          title: 'AI',
         }}
       />
       <Tab.Screen

@@ -141,8 +141,14 @@ export default function DashboardScreen() {
         }
       >
         <View style={styles.topHeader}>
-          <Text style={styles.welcomeLabel}>Welcome,</Text>
-          <Text style={styles.title}>{displayName}</Text>
+          <View>
+            <Text style={styles.welcomeLabel}>Welcome,</Text>
+            <Text style={styles.title}>{displayName}</Text>
+          </View>
+          <TouchableOpacity style={styles.aiButton} onPress={() => navigation.navigate('AppTabs', { screen: 'SuggestionsTab' })}>
+            <Ionicons name="sparkles" size={20} color="#FFD700" />
+            <Text style={styles.aiButtonText}>AI</Text>
+          </TouchableOpacity>
         </View>
 
         <LinearGradient colors={[colors.primary, colors.highlight]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.summaryHero}>
@@ -263,9 +269,26 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   topHeader: {
-    flexDirection: "column",
-    alignItems: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     marginBottom: 16,
+  },
+  aiButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: "#FFD700",
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  aiButtonText: {
+    color: "#FFD700",
+    fontSize: 13,
+    fontWeight: "700",
   },
   welcomeLabel: {
     color: colors.light,
